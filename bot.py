@@ -1,32 +1,38 @@
 import telebot
+import os
+from flask import Flask
+from threading import Thread
 
 TOKEN = '8922303337:AAFpCacFyODY6iRKYj23T9ETdF1AIuiqjkc'
 bot = telebot.TeleBot(TOKEN)
 
+# Servidor web simples para o Render abrir porta e o UptimeRobot detetar como "Up"
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot de Bac Bo a funcionar 24/7!"
+
+def run_web():
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
+
 # Memória por utilizador para gerir o estado do jogo
-# Estados: 'WAITING_7' (à espera das 7 iniciais) ou 'WAITING_OUTCOME' (a aguardar resultados jogada a jogada)
 user_sessions = {}
 
 def analisar_tendencia(historico):
     """Motor matemático baseado nas últimas jogadas, inércia e desvio padrão."""
-    # Filtrar apenas A e V para cálculo de tendência principal, considerando T como neutro/empate
     A_count = historico.count('A')
     V_count = historico.count('V')
-    t_count = historico.count('T')
     
     total = len(historico)
     if total == 0:
         return 'A'
     
-    # Lógica de reversão à média e inércia
-    # Se uma cor apareceu muito nas últimas, há tendência estatística de correção ou continuação baseada no peso recente
     ultimos_3 = historico[-3:]
-    
-    # Exemplo de regra estatística limpa: se os últimos 3 forem iguais, forte tendência de quebra (reversão à média)
     if len(ultimos_3) == 3 and ultimos_3[0] == ultimos_3[1] == ultimos_3[2] and ultimos_3[0] != 'T':
         return 'V' if ultimos_3[0] == 'A' else 'A'
     
-    # Caso contrário, segue a maioria ponderada das últimas jogadas
     if A_count >= V_count:
         return 'A'
     else:
@@ -58,22 +64,18 @@ def handle_message(message):
     chat_id = message.chat.id
     texto_input = message.text.strip().upper()
     
-    # Se o utilizador não iniciou
     if chat_id not in user_sessions:
         user_sessions[chat_id] = {'history': [], 'state': 'WAITING_7', 'gale': 0, 'sugestao_atual': None}
     
     sessao = user_sessions[chat_id]
     
-    # ESTADO 1: À espera das 7 jogadas iniciais
     if sessao['state'] == 'WAITING_7':
-        # Extrair letras válidas
         letras = [char for char in texto_input if char in ['A', 'V', 'T']]
         
         if len(letras) < 7:
             bot.reply_to(message, f"⚠️ Preciso de pelo menos **7 jogadas válidas** (A, V ou T). Recebi apenas {len(letras)}. Tenta novamente.", parse_mode="Markdown")
             return
         
-        # Guardar as últimas 7
         sessao['history'] = letras[-7:]
         sessao['state'] = 'WAITING_OUTCOME'
         sessao['gale'] = 0
@@ -91,7 +93,6 @@ def handle_message(message):
         )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
-    # ESTADO 2: Fluxo contínuo (jogo a jogo / gales)
     elif sessao['state'] == 'WAITING_OUTCOME':
         if len(texto_input) == 0 or texto_input[0] not in ['A', 'V', 'T']:
             bot.reply_to(message, "⚠️ Envia apenas o resultado que saiu (`A`, `V` ou `T`).", parse_mode="Markdown")
@@ -100,17 +101,13 @@ def handle_message(message):
         resultado_real = texto_input[0]
         sugestao_anterior = sessao['sugestao_atual']
         
-        # Atualizar histórico (mantém sempre a janela das últimas jogadas)
         sessao['history'].append(resultado_real)
         if len(sessao['history']) > 7:
             sessao['history'].pop(0)
             
-        # Verificar se acertou ou errou a sugestão anterior
-        # Se saiu T (Empate), tipicamente em apostas de A/V o empate devolve ou conta como perda dependendo da regra, mas vamos focar na lógica de Gale se for contra A/V.
         acertou = (resultado_real == sugestao_anterior)
         
         if acertou or resultado_real == 'T':
-            # Se acertou ou deu empate, reset aos gales e novo sinal
             sessao['gale'] = 0
             nova_sugestao = analisar_tendencia(sessao['history'])
             sessao['sugestao_atual'] = nova_sugestao
@@ -124,12 +121,10 @@ def handle_message(message):
             bot.reply_to(message, msg, parse_mode="Markdown")
             
         else:
-            # Errou, vamos avançar nos Gales (máximo 2 Gales)
             sessao['gale'] += 1
             gale_atual = sessao['gale']
             
             if gale_atual <= 2:
-                # Mantém ou recalcula ligeiramente a direção para o Gale
                 nova_sugestao = analisar_tendencia(sessao['history'])
                 sessao['sugestao_atual'] = nova_sugestao
                 cor_emoji = "🔵 AZUL" if nova_sugestao == 'A' else "🔴 VERMELHO"
@@ -141,7 +136,6 @@ def handle_message(message):
                 )
                 bot.reply_to(message, msg, parse_mode="Markdown")
             else:
-                # Passou dos 2 gales (Loss total do ciclo)
                 sessao['gale'] = 0
                 nova_sugestao = analisar_tendencia(sessao['history'])
                 sessao['sugestao_atual'] = nova_sugestao
@@ -154,5 +148,10 @@ def handle_message(message):
                 )
                 bot.reply_to(message, msg, parse_mode="Markdown")
 
-print("Bot de Bac Bo iniciado com sucesso...")
-bot.infinity_polling()
+if __name__ == '__main__':
+    # Arranca o servidor web em segundo plano para o Render e UptimeRobot ficarem felizes
+    t = Thread(target=run_web)
+    t.start()
+    
+    print("Bot de Bac Bo e servidor web iniciados com sucesso...")
+    bot.infinity_polling()
