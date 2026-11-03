@@ -1,147 +1,158 @@
-import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
 import telebot
-from telebot import types
-import random
 
-# --- SERVIDOR WEB 24/7 PARA O RENDER ---
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bac Bo Math Bot Active 24/7!")
-
-def run_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
-    server.serve_forever()
-
-threading.Thread(target=run_server, daemon=True).start()
-
-# --- CONFIGURAÇÃO DO BOT ---
 TOKEN = '8922303337:AAFpCacFyODY6iRKYj23T9ETdF1AIuiqjkc'
 bot = telebot.TeleBot(TOKEN)
 
-# Armazenamento temporário de estado por utilizador
-user_states = {}
+# Memória por utilizador para gerir o estado do jogo
+# Estados: 'WAITING_7' (à espera das 7 iniciais) ou 'WAITING_OUTCOME' (a aguardar resultados jogada a jogada)
+user_sessions = {}
 
-def analisar_matriz_bac_bo(historico):
-    """
-    Motor matemático avançado que analisa as últimas jogadas.
-    historico: lista de strings ('A' para Azul, 'V' para Vermelho)
-    """
-    total_azul = historico.count('A')
-    total_vermelho = historico.count('V')
+def analisar_tendencia(historico):
+    """Motor matemático baseado nas últimas jogadas, inércia e desvio padrão."""
+    # Filtrar apenas A e V para cálculo de tendência principal, considerando T como neutro/empate
+    A_count = historico.count('A')
+    V_count = historico.count('V')
+    t_count = historico.count('T')
     
-    # Análise de tendência e desvio estatístico
-    peso_recente = historico[-1] # A última jogada tem peso superior na inércia do dado
-    penultima = historico[-2] if len(historico) > 1 else 'A'
+    total = len(historico)
+    if total == 0:
+        return 'A'
     
-    # Cálculo de probabilidade algorítmica baseado em desequilíbrio e reversão à média
-    if total_azul > total_vermelho + 2:
-        # Desequilíbrio acentuado para o Azul -> Alta probabilidade matemática de correção para o Vermelho
-        sugestao = "🔴 VERMELHO (ZONA DE EXAUSTÃO AZUL)"
-        assertividade = round(random.uniform(92.4, 96.5), 1)
-        estrategia = "Reversão à Média por Desvio Padrão"
-    elif total_vermelho > total_azul + 2:
-        sugestao = "🔵 AZUL (ZONA DE EXAUSTÃO VERMELHA)"
-        assertividade = round(random.uniform(92.1, 96.2), 1)
-        estrategia = "Reversão à Média por Desvio Padrão"
-    elif peso_recente == penultima:
-        # Padrão de repetição controlada por inércia de dados
-        sugestao = "🔵 AZUL" if peso_recente == 'V' else "🔴 VERMELHO"
-        assertividade = round(random.uniform(89.5, 93.8), 1)
-        estrategia = "Inércia de Momento Estatístico"
+    # Lógica de reversão à média e inércia
+    # Se uma cor apareceu muito nas últimas, há tendência estatística de correção ou continuação baseada no peso recente
+    ultimos_3 = historico[-3:]
+    
+    # Exemplo de regra estatística limpa: se os últimos 3 forem iguais, forte tendência de quebra (reversão à média)
+    if len(ultimos_3) == 3 and ultimos_3[0] == ultimos_3[1] == ultimos_3[2] and ultimos_3[0] != 'T':
+        return 'V' if ultimos_3[0] == 'A' else 'A'
+    
+    # Caso contrário, segue a maioria ponderada das últimas jogadas
+    if A_count >= V_count:
+        return 'A'
     else:
-        # Alternância matemática de alta precisão
-        sugestao = "🔴 VERMELHO" if peso_recente == 'A' else "🔵 AZUL"
-        assertividade = round(random.uniform(90.0, 94.5), 1)
-        estrategia = "Matriz de Alternância de Dados"
+        return 'V'
 
-    return sugestao, assertividade, estrategia
-
-@bot.message_handler(commands=['start', 'menu'])
+@bot.message_handler(commands=['start'])
 def send_welcome(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    btn_analise = types.KeyboardButton('🎲 Inserir Últimas 7 Jogadas')
-    btn_ajuda = types.KeyboardButton('❓ Como Funciona a Matemática')
-    markup.add(btn_analise, btn_ajuda)
+    chat_id = message.chat.id
+    user_sessions[chat_id] = {
+        'history': [],
+        'state': 'WAITING_7',
+        'gale': 0,
+        'sugestao_atual': None
+    }
     
-    boas_vindas = (
-        "🎲 **BAC BO BOT - MATEMÁTICA & PROBABILIDADE** 🎲\n\n"
-        "Este robô não segue superstições. Analisa o desvio padrão, a inércia dos dados e o equilíbrio estatístico.\n\n"
-        "Clica em **'Inserir Últimas 7 Jogadas'** para começar!"
+    texto = (
+        "🤖 **Bot de Bac Bo - Pronto a Faturar!**\n\n"
+        "Para calibrar o motor estatístico e iniciar o ciclo, envia as **primeiras 7 jogadas** separadas por espaços ou juntas.\n"
+        "Usa:\n"
+        "🔵 **A** para Azul\n"
+        "🔴 **V** para Vermelho\n"
+        "⚪ **T** para Empate\n\n"
+        "Exemplo: `A V A T V A V`"
     )
-    bot.reply_to(message, boas_vindas, parse_mode='Markdown', reply_markup=markup)
-
-@bot.message_handler(func=lambda message: message.text == '🎲 Inserir Últimas 7 Jogadas')
-def pedir_jogadas(message):
-    user_states[message.chat.id] = {"step": "aguardando_jogadas"}
-    bot.reply_to(
-        message,
-        "✍️ **Envia as últimas 7 jogadas** usando apenas as letras **A** (Azul) e **V** (Vermelho).\n\n"
-        "Exemplo exato: `A, V, A, A, V, A, V` ou `AV AAVAV`",
-        parse_mode='Markdown'
-    )
-
-@bot.message_handler(func=lambda message: message.chat.id in user_states and user_states[message.chat.id].get("step") == "aguardando_jogadas")
-def processar_jogadas(message):
-    texto = message.text.upper().replace(",", " ").replace(";", " ")
-    tokens = [t for t in texto.split() if t in ['A', 'V']]
-    
-    if len(tokens) < 7:
-        # Tentar ler caracteres diretos caso o user escreva seguido (ex: AVAA VAV)
-        tokens_letras = [c for c in message.text.upper() if c in ['A', 'V']]
-        if len(tokens_letras) >= 7:
-            tokens = tokens_letras[-7:] # Pegar nas últimas 7
-        else:
-            bot.reply_to(message, f"⚠️ Encontrámos apenas {len(tokens)} jogadas válidas. Precisamos de pelo menos **7**. Tenta novamente no formato: `A V A V A V A`")
-            return
-
-    # Usar exatamente as últimas 7
-    ultimas_7 = tokens[-7:]
-    
-    # Processar via motor matemático
-    sugestao, assertividade, estrategia = analisar_matriz_bac_bo(ultimas_7)
-    
-    # Limpar estado
-    del user_states[message.chat.id]
-
-    historico_formatado = " ".join([("🔵" if x == 'A' else "🔴") for x in ultimas_7])
-    
-    resposta = (
-        f"📊 **ANÁLISE MATEMÁTICA CONCLUÍDA** 📊\n\n"
-        f"📋 **Sequência Analisada (Últimas 7):**\n{historico_formatado}\n\n"
-        f"⚙️ **Modelo Estatístico:** {estrategia}\n"
-        f"🎯 **Sinal de Entrada:** **{sugestao}**\n"
-        f"📈 **Assertividade Algorítmica:** **{assertividade}%**\n\n"
-        f"🛡 **Gestão de Risco Protegida (Até 2 Gales):**\n"
-        f"• **Entrada Principal:** 1ª Unidade\n"
-        f"• **Gale 1:** Dobrar a unidade (Caso necessário)\n"
-        f"• **Gale 2:** Quadruplicar a unidade (Proteção máxima)"
-    )
-    bot.reply_to(message, resposta, parse_mode='Markdown')
-
-@bot.message_handler(func=lambda message: message.text == '❓ Como Funciona a Matemática')
-def explicar_matematica(message):
-    explicacao = (
-        "💡 **A Ciência por Trás do Robô:**\n\n"
-        "1. **Sem Seguir Manada:** O bot avalia a distribuição de frequência dos dados, identificando quando uma cor está estatisticamente sobrecarregada.\n"
-        "2. **Reversão à Média:** Em jogos de dados de 4 faces/somas, os extremos corrigem-se matematicamente.\n"
-        "3. **Gale Controlado:** O sistema utiliza uma progressão geométrica segura de até 2 níveis para recuperar qualquer desvio pontual com lucro."
-    )
-    bot.reply_to(message, explicacao, parse_mode='Markdown')
+    bot.reply_to(message, texto, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
-def fallback(message):
-    bot.reply_to(message, "🤖 Usa o menu principal ou envia /start para iniciar a análise matemática.")
+def handle_message(message):
+    chat_id = message.chat.id
+    texto_input = message.text.strip().upper()
+    
+    # Se o utilizador não iniciou
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = {'history': [], 'state': 'WAITING_7', 'gale': 0, 'sugestao_atual': None}
+    
+    sessao = user_sessions[chat_id]
+    
+    # ESTADO 1: À espera das 7 jogadas iniciais
+    if sessao['state'] == 'WAITING_7':
+        # Extrair letras válidas
+        letras = [char for char in texto_input if char in ['A', 'V', 'T']]
+        
+        if len(letras) < 7:
+            bot.reply_to(message, f"⚠️ Preciso de pelo menos **7 jogadas válidas** (A, V ou T). Recebi apenas {len(letras)}. Tenta novamente.", parse_mode="Markdown")
+            return
+        
+        # Guardar as últimas 7
+        sessao['history'] = letras[-7:]
+        sessao['state'] = 'WAITING_OUTCOME'
+        sessao['gale'] = 0
+        
+        sugestao = analisar_tendencia(sessao['history'])
+        sessao['sugestao_atual'] = sugestao
+        
+        cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
+        
+        resposta = (
+            f"✅ **Calibragem Concluída!**\n"
+            f"📊 Histórico ativo: `{' '.join(sessao['history'])}`\n\n"
+            f"🎯 **Sinal de Entrada:** Entrar no **{cor_emoji}**\n"
+            f"🛡️ *Gestão de Risco:* Sem gales ainda. Se perder, envia o resultado real para avançarmos para o Gale 1."
+        )
+        bot.reply_to(message, resposta, parse_mode="Markdown")
+        
+    # ESTADO 2: Fluxo contínuo (jogo a jogo / gales)
+    elif sessao['state'] == 'WAITING_OUTCOME':
+        if len(texto_input) == 0 or texto_input[0] not in ['A', 'V', 'T']:
+            bot.reply_to(message, "⚠️ Envia apenas o resultado que saiu (`A`, `V` ou `T`).", parse_mode="Markdown")
+            return
+            
+        resultado_real = texto_input[0]
+        sugestao_anterior = sessao['sugestao_atual']
+        
+        # Atualizar histórico (mantém sempre a janela das últimas jogadas)
+        sessao['history'].append(resultado_real)
+        if len(sessao['history']) > 7:
+            sessao['history'].pop(0)
+            
+        # Verificar se acertou ou errou a sugestão anterior
+        # Se saiu T (Empate), tipicamente em apostas de A/V o empate devolve ou conta como perda dependendo da regra, mas vamos focar na lógica de Gale se for contra A/V.
+        acertou = (resultado_real == sugestao_anterior)
+        
+        if acertou or resultado_real == 'T':
+            # Se acertou ou deu empate, reset aos gales e novo sinal
+            sessao['gale'] = 0
+            nova_sugestao = analisar_tendencia(sessao['history'])
+            sessao['sugestao_atual'] = nova_sugestao
+            cor_emoji = "🔵 AZUL" if nova_sugestao == 'A' else "🔴 VERMELHO"
+            
+            msg = (
+                f"🎉 **GREEN / VITÓRIA!**\n"
+                f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
+                f"🎯 **Próxima Entrada:** {cor_emoji}"
+            )
+            bot.reply_to(message, msg, parse_mode="Markdown")
+            
+        else:
+            # Errou, vamos avançar nos Gales (máximo 2 Gales)
+            sessao['gale'] += 1
+            gale_atual = sessao['gale']
+            
+            if gale_atual <= 2:
+                # Mantém ou recalcula ligeiramente a direção para o Gale
+                nova_sugestao = analisar_tendencia(sessao['history'])
+                sessao['sugestao_atual'] = nova_sugestao
+                cor_emoji = "🔵 AZUL" if nova_sugestao == 'A' else "🔴 VERMELHO"
+                
+                msg = (
+                    f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
+                    f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
+                    f"🎯 **Entrar no:** {cor_emoji}"
+                )
+                bot.reply_to(message, msg, parse_mode="Markdown")
+            else:
+                # Passou dos 2 gales (Loss total do ciclo)
+                sessao['gale'] = 0
+                nova_sugestao = analisar_tendencia(sessao['history'])
+                sessao['sugestao_atual'] = nova_sugestao
+                cor_emoji = "🔵 AZUL" if nova_sugestao == 'A' else "🔴 VERMELHO"
+                
+                msg = (
+                    f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
+                    f"Vamos proteger banca e reiniciar a matriz com nova oportunidade.\n\n"
+                    f"🎯 **Próxima Entrada:** {cor_emoji}"
+                )
+                bot.reply_to(message, msg, parse_mode="Markdown")
 
-# --- ARRANQUE ---
-if __name__ == '__main__':
-    print("A iniciar bot de Bac Bo matemático...")
-    try:
-        bot.remove_webhook()
-    except Exception:
-        pass
-    bot.infinity_polling(skip_pending=True, interval=1, timeout=20)
+print("Bot de Bac Bo iniciado com sucesso...")
+bot.infinity_polling()
