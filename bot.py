@@ -6,7 +6,7 @@ from threading import Thread
 TOKEN = '8922303337:AAFpCacFyODY6iRKYj23T9ETdF1AIuiqjkc'
 bot = telebot.TeleBot(TOKEN)
 
-# Servidor web simples para o Render abrir porta e o UptimeRobot detetar como "Up"
+# Servidor web simples para o Render abrir porta e o UptimeRobot ficar ativo 24/7
 app = Flask('')
 
 @app.route('/')
@@ -17,7 +17,7 @@ def run_web():
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
 
-# Memória por utilizador para gerir o estado do jogo
+# Memória por utilizador para gerir o estado do jogo e fixar a cor do ciclo de gales
 user_sessions = {}
 
 def analisar_tendencia(historico):
@@ -69,6 +69,7 @@ def handle_message(message):
     
     sessao = user_sessions[chat_id]
     
+    # ESTADO 1: À espera das 7 jogadas iniciais
     if sessao['state'] == 'WAITING_7':
         letras = [char for char in texto_input if char in ['A', 'V', 'T']]
         
@@ -80,6 +81,7 @@ def handle_message(message):
         sessao['state'] = 'WAITING_OUTCOME'
         sessao['gale'] = 0
         
+        # Gera o primeiro sinal e fixa-o para o ciclo
         sugestao = analisar_tendencia(sessao['history'])
         sessao['sugestao_atual'] = sugestao
         
@@ -89,25 +91,29 @@ def handle_message(message):
             f"✅ **Calibragem Concluída!**\n"
             f"📊 Histórico ativo: `{' '.join(sessao['history'])}`\n\n"
             f"🎯 **Sinal de Entrada:** Entrar no **{cor_emoji}**\n"
-            f"🛡️ *Gestão de Risco:* Sem gales ainda. Se perder, envia o resultado real para avançarmos para o Gale 1."
+            f"🛡️ *Gestão de Risco:* Sem gales ainda. Se perder, envia o resultado real para avançarmos para o Gale 1 na mesma cor."
         )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
+    # ESTADO 2: Fluxo contínuo (jogo a jogo / gales)
     elif sessao['state'] == 'WAITING_OUTCOME':
         if len(texto_input) == 0 or texto_input[0] not in ['A', 'V', 'T']:
             bot.reply_to(message, "⚠️ Envia apenas o resultado que saiu (`A`, `V` ou `T`).", parse_mode="Markdown")
             return
             
         resultado_real = texto_input[0]
-        sugestao_anterior = sessao['sugestao_atual']
+        cor_em_curso = sessao['sugestao_atual']
         
+        # Atualizar histórico com o resultado que realmente saiu no casino
         sessao['history'].append(resultado_real)
         if len(sessao['history']) > 7:
             sessao['history'].pop(0)
             
-        acertou = (resultado_real == sugestao_anterior)
+        # Verificar se acertou com base na cor em que o utilizador estava a apostar
+        acertou = (resultado_real == cor_em_curso)
         
         if acertou or resultado_real == 'T':
+            # Vitória ou Empate: Reseta os gales, recalcula nova tendência para o próximo ciclo
             sessao['gale'] = 0
             nova_sugestao = analisar_tendencia(sessao['history'])
             sessao['sugestao_atual'] = nova_sugestao
@@ -121,21 +127,21 @@ def handle_message(message):
             bot.reply_to(message, msg, parse_mode="Markdown")
             
         else:
+            # Errou, avança no Gale mantendo obrigatoriamente a MESMA COR
             sessao['gale'] += 1
             gale_atual = sessao['gale']
             
             if gale_atual <= 2:
-                nova_sugestao = analisar_tendencia(sessao['history'])
-                sessao['sugestao_atual'] = nova_sugestao
-                cor_emoji = "🔵 AZUL" if nova_sugestao == 'A' else "🔴 VERMELHO"
+                cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
                 
                 msg = (
                     f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
                     f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
-                    f"🎯 **Entrar no:** {cor_emoji}"
+                    f"🎯 **Manter na mesma cor:** {cor_emoji}"
                 )
                 bot.reply_to(message, msg, parse_mode="Markdown")
             else:
+                # Passou dos 2 gales (Loss total do ciclo), agora sim recalcula nova cor para reiniciar
                 sessao['gale'] = 0
                 nova_sugestao = analisar_tendencia(sessao['history'])
                 sessao['sugestao_atual'] = nova_sugestao
@@ -149,7 +155,6 @@ def handle_message(message):
                 bot.reply_to(message, msg, parse_mode="Markdown")
 
 if __name__ == '__main__':
-    # Arranca o servidor web em segundo plano para o Render e UptimeRobot ficarem felizes
     t = Thread(target=run_web)
     t.start()
     
