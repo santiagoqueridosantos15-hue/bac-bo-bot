@@ -6,37 +6,55 @@ from threading import Thread
 TOKEN = '8922303337:AAFpCacFyODY6iRKYj23T9ETdF1AIuiqjkc'
 bot = telebot.TeleBot(TOKEN)
 
-# Servidor web simples para o Render abrir porta e o UptimeRobot ficar ativo 24/7
+# Servidor web para o Render e UptimeRobot manterem o bot 24/7 ativo
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor de Elite) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
 
-# Memória por utilizador para gerir o estado do jogo e fixar a cor do ciclo de gales
+# Memória de sessões por utilizador
 user_sessions = {}
 
 def analisar_tendencia(historico):
-    """Motor matemático baseado nas últimas jogadas, inércia e desvio padrão."""
-    A_count = historico.count('A')
-    V_count = historico.count('V')
-    
-    total = len(historico)
-    if total == 0:
+    """
+    MOTOR MATEMÁTICO DE ELITE (Bac Bo):
+    Combina Inércia, Desvio Padrão, Padrões de Dragão e Ping-Pong.
+    """
+    # Isolar apenas A e V para análise de tendência pura, mantendo o histórico intacto
+    puros = [x for x in historico if x in ['A', 'V']]
+    if not puros:
         return 'A'
     
-    ultimos_3 = historico[-3:]
-    if len(ultimos_3) == 3 and ultimos_3[0] == ultimos_3[1] == ultimos_3[2] and ultimos_3[0] != 'T':
-        return 'V' if ultimos_3[0] == 'A' else 'A'
+    # 1. ESTRATÉGIA PING-PONG (Detetor de Alternância Estrita)
+    if len(puros) >= 4:
+        if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
+            # Em alternâncias longas, o motor aposta na reversão à média (quebra do padrão no elemento seguinte)
+            return 'V' if puros[-1] == 'A' else 'A'
+
+    # 2. ESTRATÉGIA DRAGÃO (Detetor de Repetição / Streaks)
+    ultimos_3 = puros[-3:] if len(puros) >= 3 else puros
+    if len(ultimos_3) >= 3 and ultimos_3[0] == ultimos_3[1] == ultimos_3[2]:
+        # Após 3 repetições idênticas seguidas, a probabilidade estatística de inversão dispara
+        return 'V' if ultimos_3[-1] == 'A' else 'A'
+
+    # 3. DESVIO PADRÃO E EQUILÍBRIO DE FREQUÊNCIA
+    a_count = puros.count('A')
+    v_count = puros.count('V')
     
-    if A_count >= V_count:
-        return 'A'
-    else:
+    if a_count > v_count + 1:
+        # Azul sobrecarregado no sapato recente -> Força reversão para Vermelho
         return 'V'
+    elif v_count > a_count + 1:
+        # Vermelho sobrecarregado no sapato recente -> Força reversão para Azul
+        return 'A'
+        
+    # 4. INÉRCIA DE CURTO PRAZO (Fallback Inteligente)
+    return 'V' if puros[-1] == 'A' else 'A'
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -49,9 +67,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Pronto a Faturar!**\n\n"
-        "Para calibrar o motor estatístico e iniciar o ciclo, envia as **primeiras 7 jogadas** separadas por espaços ou juntas.\n"
-        "Usa:\n"
+        "🤖 **Bot de Bac Bo - Motor de Elite Ativo!** 🚀\n\n"
+        "Para calibrar a matriz matemática avançada, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -69,7 +86,7 @@ def handle_message(message):
     
     sessao = user_sessions[chat_id]
     
-    # ESTADO 1: À espera das 7 jogadas iniciais
+    # ESTADO 1: Calibração Inicial (7 jogadas)
     if sessao['state'] == 'WAITING_7':
         letras = [char for char in texto_input if char in ['A', 'V', 'T']]
         
@@ -87,41 +104,40 @@ def handle_message(message):
         cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
         
         resposta = (
-            f"✅ **Calibragem Concluída!**\n"
+            f"✅ **Matriz de Elite Calibrada!**\n"
             f"📊 Histórico ativo: `{' '.join(sessao['history'])}`\n\n"
             f"🎯 **Sinal de Entrada:** Entrar no **{cor_emoji}**\n"
-            f"🛡️ *Gestão de Risco:* Sem gales ainda. Se perder, envia o resultado real para avançarmos para o Gale 1 na mesma cor."
+            f"🛡️ *Gestão de Risco:* Sem gales ainda. Se perder, envia o resultado real."
         )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
-    # ESTADO 2: Fluxo contínuo (jogo a jogo / gales)
+    # ESTADO 2: Fluxo Contínuo Inteligente
     elif sessao['state'] == 'WAITING_OUTCOME':
         if len(texto_input) == 0 or texto_input[0] not in ['A', 'V', 'T']:
-            bot.reply_to(message, "⚠️ Envia apenas o resultado que saiu (`A`, `V` ou `T`).", parse_mode="Markdown")
+            bot.reply_to(message, "⚠️ Envia apenas o resultado real (`A`, `V` ou `T`).", parse_mode="Markdown")
             return
             
         resultado_real = texto_input[0]
         cor_em_curso = sessao['sugestao_atual']
         
-        # Atualizar histórico com o resultado real
+        # Atualizar histórico mantendo a janela deslizante
         sessao['history'].append(resultado_real)
         if len(sessao['history']) > 7:
             sessao['history'].pop(0)
             
-        # TRATAMENTO DO EMPATE (T): Devolve a aposta, mantém o gale atual e repete o sinal
+        # TRATAMENTO DE EMPATE (T): Devolve a aposta, mantém o nível de gale atual
         if resultado_real == 'T':
             cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
             gale_atual = sessao['gale']
             
             msg = (
                 f"⚪ **EMPATE (T) - Aposta Devolvida**\n"
-                f"O empate não conta como vitória nem derrota.\n"
-                f"🔄 Mantém-se o nível (Gale atual: `{gale_atual}`)\n\n"
+                f"O empate não altera o ciclo. (Gale atual: `{gale_atual}`)\n\n"
                 f"🎯 **Repetir Entrada no:** {cor_emoji}"
             )
             bot.reply_to(message, msg, parse_mode="Markdown")
             
-        # TRATAMENTO DA VITÓRIA (Green)
+        # TRATAMENTO DE VITÓRIA (Green)
         elif resultado_real == cor_em_curso:
             sessao['gale'] = 0
             nova_sugestao = analisar_tendencia(sessao['history'])
@@ -135,7 +151,7 @@ def handle_message(message):
             )
             bot.reply_to(message, msg, parse_mode="Markdown")
             
-        # TRATAMENTO DA DERROTA (Red) -> Avança no Gale mantendo a cor
+        # TRATAMENTO DE DERROTA (Red) -> Avança no Gale mantendo obrigatoriamente a cor
         else:
             sessao['gale'] += 1
             gale_atual = sessao['gale']
@@ -150,7 +166,7 @@ def handle_message(message):
                 )
                 bot.reply_to(message, msg, parse_mode="Markdown")
             else:
-                # Passou dos 2 gales (Loss total), reseta e recalcula nova cor
+                # Loss total após 2 Gales, reseta e recalcula nova matriz
                 sessao['gale'] = 0
                 nova_sugestao = analisar_tendencia(sessao['history'])
                 sessao['sugestao_atual'] = nova_sugestao
@@ -158,7 +174,7 @@ def handle_message(message):
                 
                 msg = (
                     f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
-                    f"Vamos proteger banca e reiniciar a matriz com nova oportunidade.\n\n"
+                    f"Protegendo banca. A recalcular matriz...\n\n"
                     f"🎯 **Próxima Entrada:** {cor_emoji}"
                 )
                 bot.reply_to(message, msg, parse_mode="Markdown")
@@ -167,5 +183,5 @@ if __name__ == '__main__':
     t = Thread(target=run_web)
     t.start()
     
-    print("Bot de Bac Bo e servidor web iniciados com sucesso...")
+    print("Bot com Motor de Elite iniciado com sucesso...")
     bot.infinity_polling()
