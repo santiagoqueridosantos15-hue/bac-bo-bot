@@ -81,7 +81,6 @@ def handle_message(message):
         sessao['state'] = 'WAITING_OUTCOME'
         sessao['gale'] = 0
         
-        # Gera o primeiro sinal e fixa-o para o ciclo
         sugestao = analisar_tendencia(sessao['history'])
         sessao['sugestao_atual'] = sugestao
         
@@ -104,16 +103,26 @@ def handle_message(message):
         resultado_real = texto_input[0]
         cor_em_curso = sessao['sugestao_atual']
         
-        # Atualizar histórico com o resultado que realmente saiu no casino
+        # Atualizar histórico com o resultado real
         sessao['history'].append(resultado_real)
         if len(sessao['history']) > 7:
             sessao['history'].pop(0)
             
-        # Verificar se acertou com base na cor em que o utilizador estava a apostar
-        acertou = (resultado_real == cor_em_curso)
-        
-        if acertou or resultado_real == 'T':
-            # Vitória ou Empate: Reseta os gales, recalcula nova tendência para o próximo ciclo
+        # TRATAMENTO DO EMPATE (T): Devolve a aposta, mantém o gale atual e repete o sinal
+        if resultado_real == 'T':
+            cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
+            gale_atual = sessao['gale']
+            
+            msg = (
+                f"⚪ **EMPATE (T) - Aposta Devolvida**\n"
+                f"O empate não conta como vitória nem derrota.\n"
+                f"🔄 Mantém-se o nível (Gale atual: `{gale_atual}`)\n\n"
+                f"🎯 **Repetir Entrada no:** {cor_emoji}"
+            )
+            bot.reply_to(message, msg, parse_mode="Markdown")
+            
+        # TRATAMENTO DA VITÓRIA (Green)
+        elif resultado_real == cor_em_curso:
             sessao['gale'] = 0
             nova_sugestao = analisar_tendencia(sessao['history'])
             sessao['sugestao_atual'] = nova_sugestao
@@ -126,8 +135,8 @@ def handle_message(message):
             )
             bot.reply_to(message, msg, parse_mode="Markdown")
             
+        # TRATAMENTO DA DERROTA (Red) -> Avança no Gale mantendo a cor
         else:
-            # Errou, avança no Gale mantendo obrigatoriamente a MESMA COR
             sessao['gale'] += 1
             gale_atual = sessao['gale']
             
@@ -141,7 +150,7 @@ def handle_message(message):
                 )
                 bot.reply_to(message, msg, parse_mode="Markdown")
             else:
-                # Passou dos 2 gales (Loss total do ciclo), agora sim recalcula nova cor para reiniciar
+                # Passou dos 2 gales (Loss total), reseta e recalcula nova cor
                 sessao['gale'] = 0
                 nova_sugestao = analisar_tendencia(sessao['history'])
                 sessao['sugestao_atual'] = nova_sugestao
