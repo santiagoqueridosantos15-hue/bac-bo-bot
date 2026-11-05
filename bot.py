@@ -6,12 +6,12 @@ from threading import Thread
 TOKEN = '8922303337:AAFpCacFyODY6iRKYj23T9ETdF1AIuiqjkc'
 bot = telebot.TeleBot(TOKEN)
 
-# Servidor web para o Render e UptimeRobot manterem o bot 24/7 ativo
+# Servidor web integrado para o Render e UptimeRobot manterem o bot 24/7 ativo
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Filtro Inteligente de Pausa) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Ultra-Definitivo) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -22,23 +22,32 @@ user_sessions = {}
 
 def analisar_tendencia(historico):
     """
-    MOTOR COM FILTRO DE PAUSA (AGUARDAR):
-    - Retorna 'A' ou 'V' se houver um padrão claro (Tendência/Dragão ou Ping-Pong limpo).
-    - Retorna None se o mercado estiver caótico (Sinal de PAUSA / NÃO OPERAR).
+    MOTOR MATEMÁTICO ULTRA-DEFINITIVO (Bac Bo):
+    - Combina Dragão, Ping-Pong e Desvio Padrão.
+    - Se o mercado estiver instável, retorna None (Filtro de Pausa / Não Operar).
     """
     puros = [x for x in historico if x in ['A', 'V']]
-    if len(puros) < 5:
+    if len(puros) < 6:
         return None
     
-    # 1. Tendência / Dragão (últimos 2 iguais mostram força na inércia)
-    if puros[-1] == puros[-2]:
+    # 1. TENDÊNCIA FORTE / DRAGÃO: Se os últimos 3 resultados são iguais, segue a inércia
+    if puros[-1] == puros[-2] == puros[-3]:
         return puros[-1]
     
-    # 2. Ping-Pong limpo (alternância estrita nos últimos 3)
-    if puros[-1] != puros[-2] and puros[-2] != puros[-3]:
+    # 2. PING-PONG PERFEITO: Alternância estrita nos últimos 4 elementos
+    if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
         return 'V' if puros[-1] == 'A' else 'A'
         
-    # Mercado caótico / sem padrão claro -> Indicar Pausa (Não Operar)
+    # 3. DESVIO PADRÃO / EQUILÍBRIO DE FREQUÊNCIA
+    a_count = puros.count('A')
+    v_count = puros.count('V')
+    
+    if a_count >= v_count + 2:
+        return 'V'
+    elif v_count >= a_count + 2:
+        return 'A'
+        
+    # Mercado caótico ou volátil -> Pausa obrigatória para proteger banca
     return None
 
 @bot.message_handler(commands=['start'])
@@ -52,8 +61,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Filtro de Pausa Inteligente Ativo!** 🚀\n\n"
-        "Para calibrar o motor, envia as **primeiras 7 jogadas**:\n"
+        "🤖 **Bot de Bac Bo - Versão Ultra-Definitiva Ativa!** 🏆🔥\n\n"
+        "Para calibrar o motor estatístico avançado, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -90,16 +99,16 @@ def handle_message(message):
             resposta = (
                 f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🟡 **MERCADO CAÓTICO / SEM PADRÃO**\n"
+                f"🟡 **MERCADO VOLÁTIL / SEM PADRÃO SEGURO**\n"
                 f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                f"Continua a enviar os resultados reais para o bot encontrar uma oportunidade segura."
+                f"O bot está em silêncio à espera de uma oportunidade cristalina."
             )
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
                 f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🎯 **Oportunidade Encontrada!** Entrar no **{cor_emoji}**\n"
+                f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
                 f"🛡️ *Gestão de Risco:* Gales protegidos na mesma cor."
             )
         bot.reply_to(message, resposta, parse_mode="Markdown")
@@ -146,9 +155,9 @@ def handle_message(message):
                     msg = (
                         f"🎉 **GREEN / VITÓRIA!**\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🟡 **MERCADO SEM PADRÃO CLARO**\n"
+                        f"🟡 **MERCADO SEM PADRÃO SEGURO**\n"
                         f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                        f"Envia o próximo resultado para reavaliar."
+                        f"Aguardando nova oportunidade limpa."
                     )
                 else:
                     cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
@@ -186,7 +195,7 @@ def handle_message(message):
                         msg = (
                             f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
                             f"Protegendo banca.\n\n"
-                            f"🟡 **MERCADO CAÓTICO**\n"
+                            f"🟡 **MERCADO VOLÁTIL**\n"
                             f"🛑 **AGUARDAR / NÃO OPERAR**"
                         )
                     else:
@@ -200,7 +209,7 @@ def handle_message(message):
                 return
         
         else:
-            # Se estávamos em pausa, avalia se já apareceu oportunidade
+            # Se estava em pausa, avalia se já apareceu uma oportunidade de ouro
             proxima = analisar_tendencia(sessao['history'])
             sessao['sugestao_atual'] = proxima
             
@@ -215,7 +224,7 @@ def handle_message(message):
                 cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
                 msg = (
                     f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n\n"
-                    f"🎯 **Oportunidade Encontrada!** Entrar no **{cor_emoji}**"
+                    f"🎯 **Oportunidade de Ouro Encontrada!** Entrar no **{cor_emoji}**"
                 )
             bot.reply_to(message, msg, parse_mode="Markdown")
 
@@ -223,5 +232,5 @@ if __name__ == '__main__':
     t = Thread(target=run_web)
     t.start()
     
-    print("Bot com Filtro de Pausa e Motor Inteligente iniciado...")
+    print("Bot Ultra-Definitivo iniciado com sucesso...")
     bot.infinity_polling()
