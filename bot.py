@@ -3,7 +3,7 @@ import os
 from flask import Flask
 from threading import Thread
 
-TOKEN = '8922303337:AAFpCacFyODY6iRKYj23T9ETdF1AIuiqjkc'
+TOKEN = '8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0'
 bot = telebot.TeleBot(TOKEN)
 
 # Servidor web integrado para o Render e UptimeRobot manterem o bot 24/7 ativo
