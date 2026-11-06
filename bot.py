@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Nível Máximo) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Nível Máximo + Polling) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -266,4 +266,4 @@ if __name__ == '__main__':
     t = Thread(target=run_web)
     t.start()
     
-    print("Bot de Nível Máximo iniciado com sucesso...")
+    bot.infinity_polling()
