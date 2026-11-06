@@ -11,23 +11,27 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Ultra-Definitivo) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Nível Máximo) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
 
-# Memória de sessões por utilizador
+# Memória de sessões por utilizador com estatísticas avançadas
 user_sessions = {}
 
 def analisar_tendencia(historico):
     """
-    MOTOR MATEMÁTICO ULTRA-DEFINITIVO (Bac Bo):
-    - Combina Dragão, Ping-Pong e Desvio Padrão.
-    - Se o mercado estiver instável, retorna None (Filtro de Pausa / Não Operar).
+    MOTOR MATEMÁTICO DE NÍVEL MÁXIMO (Bac Bo):
+    - Analisa Dragão, Ping-Pong, Desvio Padrão e Limite de Exaustão.
+    - Retorna 'A', 'V' ou None (Pausa de Segurança).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     if len(puros) < 6:
+        return None
+    
+    # Filtro de Exaustão: Se a mesma cor se repetir 6+ vezes, o mercado está saturado -> Pausa para evitar inversão violenta
+    if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
         return None
     
     # 1. TENDÊNCIA FORTE / DRAGÃO: Se os últimos 3 resultados são iguais, segue a inércia
@@ -57,16 +61,39 @@ def send_welcome(message):
         'history': [],
         'state': 'WAITING_7',
         'gale': 0,
-        'sugestao_atual': None
+        'sugestao_atual': None,
+        'stats': {'wins': 0, 'losses': 0}
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Versão Ultra-Definitiva Ativa!** 🏆🔥\n\n"
+        "🤖 **Bot de Bac Bo - Nível Máximo Ativo!** 🏆🔥\n\n"
         "Para calibrar o motor estatístico avançado, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
         "Exemplo: `A V A T V A V`"
+    )
+    bot.reply_to(message, texto, parse_mode="Markdown")
+
+@bot.message_handler(commands=['stats'])
+def send_stats(message):
+    chat_id = message.chat.id
+    if chat_id not in user_sessions:
+        bot.reply_to(message, "⚠️ Ainda não tens nenhuma sessão ativa. Usa o comando /start para começar.", parse_mode="Markdown")
+        return
+        
+    sessao = user_sessions[chat_id]
+    wins = sessao['stats']['wins']
+    losses = sessao['stats']['losses']
+    total = wins + losses
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    texto = (
+        "📊 **Estatísticas da Sessão Atual:** 📈\n\n"
+        f"🎉 **Greens (Vitórias):** `{wins}`\n"
+        f"❌ **Losses (Derrotas):** `{losses}`\n"
+        f"🎯 **Assertividade (Win Rate):** `{win_rate:.1f}%`\n"
+        f"📜 Histórico Ativo: `{' '.join(sessao['history'])}`"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -76,7 +103,13 @@ def handle_message(message):
     texto_input = message.text.strip().upper()
     
     if chat_id not in user_sessions:
-        user_sessions[chat_id] = {'history': [], 'state': 'WAITING_7', 'gale': 0, 'sugestao_atual': None}
+        user_sessions[chat_id] = {
+            'history': [], 
+            'state': 'WAITING_7', 
+            'gale': 0, 
+            'sugestao_atual': None,
+            'stats': {'wins': 0, 'losses': 0}
+        }
     
     sessao = user_sessions[chat_id]
     
@@ -97,16 +130,16 @@ def handle_message(message):
         
         if sugestao is None:
             resposta = (
-                f"✅ **Calibragem Concluída!**\n"
+                f"✅ **Calibragem Máxima Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🟡 **MERCADO VOLÁTIL / SEM PADRÃO SEGURO**\n"
+                f"🟡 **MERCADO VOLÁTIL / EXAURIDO**\n"
                 f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                f"O bot está em silêncio à espera de uma oportunidade cristalina."
+                f"O bot está em modo de proteção inteligente à espera de sinal limpo."
             )
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
-                f"✅ **Calibragem Concluída!**\n"
+                f"✅ **Calibragem Máxima Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
                 f"🛡️ *Gestão de Risco:* Gales protegidos na mesma cor."
@@ -145,6 +178,7 @@ def handle_message(message):
                 
             # TRATAMENTO DE VITÓRIA (Green)
             elif resultado_real == cor_em_curso:
+                sessao['stats']['wins'] += 1
                 sessao['gale'] = 0
                 sessao['sugestao_atual'] = None
                 
@@ -153,16 +187,15 @@ def handle_message(message):
                 
                 if proxima is None:
                     msg = (
-                        f"🎉 **GREEN / VITÓRIA!**\n"
+                        f"🎉 **GREEN / VITÓRIA!** 🟢\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🟡 **MERCADO SEM PADRÃO SEGURO**\n"
-                        f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                        f"Aguardando nova oportunidade limpa."
+                        f"🟡 **MERCADO EM PAUSA (Filtro de Segurança)**\n"
+                        f"🛑 **AGUARDAR / NÃO OPERAR**"
                     )
                 else:
                     cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
                     msg = (
-                        f"🎉 **GREEN / VITÓRIA!**\n"
+                        f"🎉 **GREEN / VITÓRIA!** 🟢\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
                         f"🎯 **Nova Oportunidade:** Entrar no **{cor_emoji}**"
                     )
@@ -185,6 +218,7 @@ def handle_message(message):
                     bot.reply_to(message, msg, parse_mode="Markdown")
                 else:
                     # Loss total após 2 Gales
+                    sessao['stats']['losses'] += 1
                     sessao['gale'] = 0
                     sessao['sugestao_atual'] = None
                     
@@ -194,7 +228,7 @@ def handle_message(message):
                     if proxima is None:
                         msg = (
                             f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
-                            f"Protegendo banca.\n\n"
+                            f"Protegendo banca rigorosamente.\n\n"
                             f"🟡 **MERCADO VOLÁTIL**\n"
                             f"🛑 **AGUARDAR / NÃO OPERAR**"
                         )
@@ -216,7 +250,7 @@ def handle_message(message):
             if proxima is None:
                 msg = (
                     f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n"
-                    f"🟡 **Mercado ainda instável.**\n"
+                    f"🟡 **Mercado ainda instável ou saturado.**\n"
                     f"🛑 **AGUARDAR / NÃO OPERAR**\n"
                     f"Continua a enviar os resultados."
                 )
@@ -232,4 +266,4 @@ if __name__ == '__main__':
     t = Thread(target=run_web)
     t.start()
     
-    print("Bot Ultra-Definitivo iniciado com sucesso...")
+    print("Bot de Nível Máximo iniciado com sucesso...")
