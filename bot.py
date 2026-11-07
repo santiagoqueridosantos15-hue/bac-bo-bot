@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Nível Máximo Plus) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Nível Máximo + Polling) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -22,45 +22,33 @@ user_sessions = {}
 
 def analisar_tendencia(historico):
     """
-    MOTOR MATEMÁTICO DE NÍVEL MÁXIMO PLUS (Bac Bo):
-    - Filtro de Exaustão (Anti-Dragão Extremo)
-    - Padrão de Duplets (Pares Gêmeos: AA VV)
-    - Recência Ponderada (Peso maior aos últimos resultados)
-    - Dragão e Ping-Pong Clássico
+    MOTOR MATEMÁTICO DE NÍVEL MÁXIMO (Bac Bo):
+    - Analisa Dragão, Ping-Pong, Desvio Padrão e Limite de Exaustão.
     - Retorna 'A', 'V' ou None (Pausa de Segurança).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     if len(puros) < 6:
         return None
     
-    # 1. Filtro de Exaustão: Se a mesma cor se repetir 6+ vezes, pausa para evitar inversão violenta
+    # Filtro de Exaustão: Se a mesma cor se repetir 6+ vezes, o mercado está saturado -> Pausa para evitar inversão violenta
     if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
         return None
     
-    # 2. FILTRO DE DUPLETS (Pares Gêmeos: ex. A A V V)
-    # Se o histórico recente mostra comportamento de blocos duplos, segue a duplicação
-    if len(puros) >= 4 and puros[-1] == puros[-2] and puros[-3] == puros[-4] and puros[-1] != puros[-3]:
-        # O padrão acabou de formar um par, logo o próximo tende a alternar para fechar o duplet oposto ou continuar
-        # Se temos AA e antes tivemos VV, o padrão de duplets sugere a inversão para começar um novo par
-        return 'V' if puros[-1] == 'A' else 'A'
-
-    # 3. TENDÊNCIA FORTE / DRAGÃO: Se os últimos 3 resultados são iguais, segue a inércia
+    # 1. TENDÊNCIA FORTE / DRAGÃO: Se os últimos 3 resultados são iguais, segue a inércia
     if puros[-1] == puros[-2] == puros[-3]:
         return puros[-1]
     
-    # 4. PING-PONG PERFEITO: Alternância estrita nos últimos 4 elementos
+    # 2. PING-PONG PERFEITO: Alternância estrita nos últimos 4 elementos
     if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
         return 'V' if puros[-1] == 'A' else 'A'
         
-    # 5. RECÊNCIA PONDERADA & DESVIO PADRÃO
-    # Dá muito mais peso aos últimos 3 resultados do que aos anteriores
-    ultimos_tres = puros[-3:]
-    peso_a = ultimos_tres.count('A') * 2 + puros.count('A')
-    peso_v = ultimos_tres.count('V') * 2 + puros.count('V')
+    # 3. DESVIO PADRÃO / EQUILÍBRIO DE FREQUÊNCIA
+    a_count = puros.count('A')
+    v_count = puros.count('V')
     
-    if peso_a >= peso_v + 4:
-        return 'V'  # Correção para o lado oposto se houver sobrecarga pesada
-    elif peso_v >= peso_a + 4:
+    if a_count >= v_count + 2:
+        return 'V'
+    elif v_count >= a_count + 2:
         return 'A'
         
     # Mercado caótico ou volátil -> Pausa obrigatória para proteger banca
@@ -78,8 +66,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Nível Máximo Plus Ativo!** 🏆🔥\n\n"
-        "Para calibrar o motor com Recência Ponderada e Duplets, envia as **primeiras 7 jogadas**:\n"
+        "🤖 **Bot de Bac Bo - Nível Máximo Ativo!** 🏆🔥\n\n"
+        "Para calibrar o motor estatístico avançado, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -101,7 +89,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Estatísticas da Sessão Atual (Plus):** 📈\n\n"
+        "📊 **Estatísticas da Sessão Atual:** 📈\n\n"
         f"🎉 **Greens (Vitórias):** `{wins}`\n"
         f"❌ **Losses (Derrotas):** `{losses}`\n"
         f"🎯 **Assertividade (Win Rate):** `{win_rate:.1f}%`\n"
@@ -142,16 +130,16 @@ def handle_message(message):
         
         if sugestao is None:
             resposta = (
-                f"✅ **Calibragem Plus Concluída!**\n"
+                f"✅ **Calibragem Máxima Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🟡 **MERCADO VOLÁTIL / SEM PADRÃO LIMPO**\n"
+                f"🟡 **MERCADO VOLÁTIL / EXAURIDO**\n"
                 f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                f"O bot está protegido por micro-filtros à espera de oportunidade."
+                f"O bot está em modo de proteção inteligente à espera de sinal limpo."
             )
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
-                f"✅ **Calibragem Plus Concluída!**\n"
+                f"✅ **Calibragem Máxima Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
                 f"🛡️ *Gestão de Risco:* Gales protegidos na mesma cor."
@@ -201,7 +189,7 @@ def handle_message(message):
                     msg = (
                         f"🎉 **GREEN / VITÓRIA!** 🟢\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🟡 **MERCADO EM PAUSA (Filtro Avançado)**\n"
+                        f"🟡 **MERCADO EM PAUSA (Filtro de Segurança)**\n"
                         f"🛑 **AGUARDAR / NÃO OPERAR**"
                     )
                 else:
@@ -262,7 +250,7 @@ def handle_message(message):
             if proxima is None:
                 msg = (
                     f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n"
-                    f"🟡 **Mercado ainda instável ou filtrado.**\n"
+                    f"🟡 **Mercado ainda instável ou saturado.**\n"
                     f"🛑 **AGUARDAR / NÃO OPERAR**\n"
                     f"Continua a enviar os resultados."
                 )
