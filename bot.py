@@ -34,8 +34,12 @@ def analisar_tendencia(historico):
     if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
         return None
     
-    # 1. TENDÊNCIA FORTE / DRAGÃO: Se os últimos 3 resultados são iguais, segue a inércia
+    # 1. TENDÊNCIA FORTE / DRAGÃO COM TRAVÃO DE SEGURANÇA:
+    # Se os últimos 3 resultados são iguais, mas se já vão 4 ou mais iguais, TRAVA para não apanhar a quebra!
     if puros[-1] == puros[-2] == puros[-3]:
+        # Se a sequência atual já tem 4 ou mais elementos iguais, o risco de quebra é enorme -> Pausa (None)
+        if len(puros) >= 4 and all(x == puros[-1] for x in puros[-4:]):
+            return None
         return puros[-1]
     
     # 2. PING-PONG PERFEITO: Alternância estrita nos últimos 4 elementos
