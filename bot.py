@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Nível Máximo + Polling) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Elite All-in-One + 2 Gales) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -20,33 +20,43 @@ def run_web():
 # Memória de sessões por utilizador com estatísticas avançadas
 user_sessions = {}
 
-def analisar_tendencia(historico):
+def analisar_tendencia_elite(historico):
     """
-    MOTOR MATEMÁTICO DE NÍVEL MÁXIMO (Bac Bo):
-    - Analisa Dragão, Ping-Pong, Desvio Padrão e Limite de Exaustão.
+    MOTOR MATEMÁTICO ELITE ALL-IN-ONE (Nível Máximo Imparável):
+    - Integra Dragão Antecipado, Ping-Pong Perfeito, Padrão de Simetria (Espelho),
+      Filtro Anti-Chop, Exaustão de Blocos e Desvio Padrão Avançado.
     - Retorna 'A', 'V' ou None (Pausa de Segurança).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     if len(puros) < 6:
         return None
     
-    # Filtro de Exaustão: Se a mesma cor se repetir 6+ vezes, o mercado está saturado -> Pausa para evitar inversão violenta
+    # 1. FILTRO DE EXAUSTÃO MÁXIMA / SATURAÇÃO DE DRAGÃO
+    # Se a mesma cor se repetir 6+ vezes seguidas, o mercado está exausto -> Pausa obrigatória
     if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
         return None
     
-    # 1. TENDÊNCIA FORTE / DRAGÃO COM TRAVÃO DE SEGURANÇA:
-    # Se os últimos 3 resultados são iguais, mas se já vão 4 ou mais iguais, TRAVA para não apanhar a quebra!
-    if puros[-1] == puros[-2] == puros[-3]:
-        # Se a sequência atual já tem 4 ou mais elementos iguais, o risco de quebra é enorme -> Pausa (None)
-        if len(puros) >= 4 and all(x == puros[-1] for x in puros[-4:]):
-            return None
+    # 2. FILTRO ANTI-CHOP (Bloqueio de Mercado Caótico / Zigue-Zague Ruim)
+    # Se houver muita alternância sem padrão nos últimos 6 elementos, o bot recusa operar
+    ultimos_6 = puros[-6:]
+    alternancias = sum(1 for i in range(len(ultimos_6) - 1) if ultimos_6[i] != ultimos_6[i+1])
+    if alternancias >= 5: # Demasiado caótico (ex: A V A V A V)
+        return None
+
+    # 3. ESTRATÉGIA DE SIMETRIA / ESPELHO RECENTE
+    # Avalia se a estrutura geométrica dos últimos blocos aponta para a continuação
+    if len(puros) >= 6 and puros[-1] == puros[-3] and puros[-2] == puros[-4]:
+        return puros[-1]
+
+    # 4. ESTRATÉGIA DE DRAGÃO ANTECIPADO (Captura Precoce ao 2º igual)
+    if puros[-1] == puros[-2]:
         return puros[-1]
     
-    # 2. PING-PONG PERFEITO: Alternância estrita nos últimos 4 elementos
+    # 5. ESTRATÉGIA DE PING-PONG PERFEITO (Alternância estrita nos últimos 4 elementos)
     if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
         return 'V' if puros[-1] == 'A' else 'A'
         
-    # 3. DESVIO PADRÃO / EQUILÍBRIO DE FREQUÊNCIA
+    # 6. ESTRATÉGIA DE DESVIO PADRÃO & JANELA DE FREQUÊNCIA DE CURTO PRAZO
     a_count = puros.count('A')
     v_count = puros.count('V')
     
@@ -55,7 +65,13 @@ def analisar_tendencia(historico):
     elif v_count >= a_count + 2:
         return 'A'
         
-    # Mercado caótico ou volátil -> Pausa obrigatória para proteger banca
+    ultimos_5 = puros[-5:]
+    if ultimos_5.count('A') >= 4:
+        return 'A'
+    elif ultimos_5.count('V') >= 4:
+        return 'V'
+
+    # Se nenhum padrão seguro for atingido, mantém a banca protegida
     return None
 
 @bot.message_handler(commands=['start'])
@@ -70,8 +86,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Nível Máximo Ativo!** 🏆🔥\n\n"
-        "Para calibrar o motor estatístico avançado, envia as **primeiras 7 jogadas**:\n"
+        "🤖 **Bot de Bac Bo - Elite All-in-One Ativo!** 🏆🔥🚀\n\n"
+        "Para calibrar o motor multi-estratégia, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -129,24 +145,24 @@ def handle_message(message):
         sessao['state'] = 'WAITING_OUTCOME'
         sessao['gale'] = 0
         
-        sugestao = analisar_tendencia(sessao['history'])
+        sugestao = analisar_tendencia_elite(sessao['history'])
         sessao['sugestao_atual'] = sugestao
         
         if sugestao is None:
             resposta = (
-                f"✅ **Calibragem Máxima Concluída!**\n"
+                f"✅ **Calibragem Elite Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🟡 **MERCADO VOLÁTIL / EXAURIDO**\n"
+                f"🟡 **MERCADO CAÓTICO / EM FILTRAGEM**\n"
                 f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                f"O bot está em modo de proteção inteligente à espera de sinal limpo."
+                f"O motor avançado está à espera de um padrão de alta precisão."
             )
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
-                f"✅ **Calibragem Máxima Concluída!**\n"
+                f"✅ **Calibragem Elite Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
-                f"🛡️ *Gestão de Risco:* Gales protegidos na mesma cor."
+                f"🛡️ *Gestão de Risco:* Protegido com até 2 Gales na mesma cor."
             )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
@@ -186,14 +202,14 @@ def handle_message(message):
                 sessao['gale'] = 0
                 sessao['sugestao_atual'] = None
                 
-                proxima = analisar_tendencia(sessao['history'])
+                proxima = analisar_tendencia_elite(sessao['history'])
                 sessao['sugestao_atual'] = proxima
                 
                 if proxima is None:
                     msg = (
                         f"🎉 **GREEN / VITÓRIA!** 🟢\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🟡 **MERCADO EM PAUSA (Filtro de Segurança)**\n"
+                        f"🟡 **MERCADO EM PAUSA (Filtros Ativos)**\n"
                         f"🛑 **AGUARDAR / NÃO OPERAR**"
                     )
                 else:
@@ -226,7 +242,7 @@ def handle_message(message):
                     sessao['gale'] = 0
                     sessao['sugestao_atual'] = None
                     
-                    proxima = analisar_tendencia(sessao['history'])
+                    proxima = analisar_tendencia_elite(sessao['history'])
                     sessao['sugestao_atual'] = proxima
                     
                     if proxima is None:
@@ -248,13 +264,13 @@ def handle_message(message):
         
         else:
             # Se estava em pausa, avalia se já apareceu uma oportunidade de ouro
-            proxima = analisar_tendencia(sessao['history'])
+            proxima = analisar_tendencia_elite(sessao['history'])
             sessao['sugestao_atual'] = proxima
             
             if proxima is None:
                 msg = (
                     f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n"
-                    f"🟡 **Mercado ainda instável ou saturado.**\n"
+                    f"🟡 **Mercado sob inspeção de filtros elite.**\n"
                     f"🛑 **AGUARDAR / NÃO OPERAR**\n"
                     f"Continua a enviar os resultados."
                 )
