@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Nível Máximo + Polling) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Nível Máximo + 1 Gale) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -66,8 +66,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Nível Máximo Ativo!** 🏆🔥\n\n"
-        "Para calibrar o motor estatístico avançado, envia as **primeiras 7 jogadas**:\n"
+        "🤖 **Bot de Bac Bo - Nível Máximo (1 Gale) Ativo!** 🏆🔥\n\n"
+        "Para calibrar o motor estatístico, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -130,7 +130,7 @@ def handle_message(message):
         
         if sugestao is None:
             resposta = (
-                f"✅ **Calibragem Máxima Concluída!**\n"
+                f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🟡 **MERCADO VOLÁTIL / EXAURIDO**\n"
                 f"🛑 **AGUARDAR / NÃO OPERAR**\n"
@@ -139,10 +139,10 @@ def handle_message(message):
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
-                f"✅ **Calibragem Máxima Concluída!**\n"
+                f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
-                f"🛡️ *Gestão de Risco:* Gales protegidos na mesma cor."
+                f"🛡️ *Gestão de Risco:* Protegido com apenas 1 Gale."
             )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
@@ -207,17 +207,18 @@ def handle_message(message):
                 sessao['gale'] += 1
                 gale_atual = sessao['gale']
                 
-                if gale_atual <= 2:
+                # Modificado para permitir apenas 1 GALE máximo
+                if gale_atual <= 1:
                     cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
                     
                     msg = (
                         f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
-                        f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
+                        f"🔄 A avançar para o único **GALE 1** permitido 🛡️\n\n"
                         f"🎯 **Manter na mesma cor:** {cor_emoji}"
                     )
                     bot.reply_to(message, msg, parse_mode="Markdown")
                 else:
-                    # Loss total após 2 Gales
+                    # Loss total após o 1º Gale falhar
                     sessao['stats']['losses'] += 1
                     sessao['gale'] = 0
                     sessao['sugestao_atual'] = None
@@ -227,16 +228,16 @@ def handle_message(message):
                     
                     if proxima is None:
                         msg = (
-                            f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
-                            f"Protegendo banca rigorosamente.\n\n"
+                            f"❌ **LOSS (Fim do ciclo com 1 Gale)**\n"
+                            f"Protegendo a banca de forma rigorosa.\n\n"
                             f"🟡 **MERCADO VOLÁTIL**\n"
                             f"🛑 **AGUARDAR / NÃO OPERAR**"
                         )
                     else:
                         cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
                         msg = (
-                            f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
-                            f"Protegendo banca. A recalcular...\n\n"
+                            f"❌ **LOSS (Fim do ciclo com 1 Gale)**\n"
+                            f"Banca protegida. A recalcular...\n\n"
                             f"🎯 **Nova Oportunidade:** Entrar no **{cor_emoji}**"
                         )
                     bot.reply_to(message, msg, parse_mode="Markdown")
