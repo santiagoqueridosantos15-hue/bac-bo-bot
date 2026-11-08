@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Elite All-in-One + 2 Gales) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Elite Dragão Seguro + 2 Gales) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -22,9 +22,7 @@ user_sessions = {}
 
 def analisar_tendencia_elite(historico):
     """
-    MOTOR MATEMÁTICO ELITE ALL-IN-ONE (Nível Máximo Imparável):
-    - Integra Dragão Antecipado, Ping-Pong Perfeito, Padrão de Simetria (Espelho),
-      Filtro Anti-Chop, Exaustão de Blocos e Desvio Padrão Avançado.
+    MOTOR MATEMÁTICO ELITE (Dragão Conservador ao 3º igual + Filtros Avançados):
     - Retorna 'A', 'V' ou None (Pausa de Segurança).
     """
     puros = [x for x in historico if x in ['A', 'V']]
@@ -32,24 +30,21 @@ def analisar_tendencia_elite(historico):
         return None
     
     # 1. FILTRO DE EXAUSTÃO MÁXIMA / SATURAÇÃO DE DRAGÃO
-    # Se a mesma cor se repetir 6+ vezes seguidas, o mercado está exausto -> Pausa obrigatória
     if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
         return None
     
     # 2. FILTRO ANTI-CHOP (Bloqueio de Mercado Caótico / Zigue-Zague Ruim)
-    # Se houver muita alternância sem padrão nos últimos 6 elementos, o bot recusa operar
     ultimos_6 = puros[-6:]
     alternancias = sum(1 for i in range(len(ultimos_6) - 1) if ultimos_6[i] != ultimos_6[i+1])
-    if alternancias >= 5: # Demasiado caótico (ex: A V A V A V)
+    if alternancias >= 5: 
         return None
 
     # 3. ESTRATÉGIA DE SIMETRIA / ESPELHO RECENTE
-    # Avalia se a estrutura geométrica dos últimos blocos aponta para a continuação
     if len(puros) >= 6 and puros[-1] == puros[-3] and puros[-2] == puros[-4]:
         return puros[-1]
 
-    # 4. ESTRATÉGIA DE DRAGÃO ANTECIPADO (Captura Precoce ao 2º igual)
-    if puros[-1] == puros[-2]:
+    # 4. ESTRATÉGIA DE DRAGÃO SEGURO (Só dispara ao 3º resultado igual: V V V ou A A A)
+    if puros[-1] == puros[-2] == puros[-3]:
         return puros[-1]
     
     # 5. ESTRATÉGIA DE PING-PONG PERFEITO (Alternância estrita nos últimos 4 elementos)
@@ -86,8 +81,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Elite All-in-One Ativo!** 🏆🔥🚀\n\n"
-        "Para calibrar o motor multi-estratégia, envia as **primeiras 7 jogadas**:\n"
+        "🤖 **Bot de Bac Bo - Elite Dragão Seguro Ativo!** 🏆🔥🚀\n\n"
+        "Para calibrar o motor, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -150,7 +145,7 @@ def handle_message(message):
         
         if sugestao is None:
             resposta = (
-                f"✅ **Calibragem Elite Concluída!**\n"
+                f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🟡 **MERCADO CAÓTICO / EM FILTRAGEM**\n"
                 f"🛑 **AGUARDAR / NÃO OPERAR**\n"
@@ -159,7 +154,7 @@ def handle_message(message):
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
-                f"✅ **Calibragem Elite Concluída!**\n"
+                f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
                 f"🛡️ *Gestão de Risco:* Protegido com até 2 Gales na mesma cor."
