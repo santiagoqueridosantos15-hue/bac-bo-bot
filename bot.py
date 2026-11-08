@@ -1,3 +1,8 @@
+import telebot
+import os
+from flask import Flask
+from threading import Thread
+
 TOKEN = '8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0'
 bot = telebot.TeleBot(TOKEN)
 
@@ -6,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Elite com Prioridade ao Dragão + 2 Gales) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Autónomo Supremo + 2 Gales) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -15,38 +20,49 @@ def run_web():
 # Memória de sessões por utilizador com estatísticas avançadas
 user_sessions = {}
 
-def analisar_tendencia_elite(historico):
+def analisar_tendencia_autonoma(historico):
     """
-    MOTOR MATEMÁTICO ELITE (Prioridade Máxima ao Dragão + Filtros Avançados):
-    - Retorna 'A', 'V' ou None (Pausa de Segurança).
+    MOTOR MATEMÁTICO AUTÓNOMO SUPREMO (Nível Máximo Imparável):
+    - Decisão inteligente e autónoma baseada no confluência de múltiplos indicadores.
+    - Retorna 'A', 'V' ou None (Pausa de Segurança Estrita).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     if len(puros) < 6:
         return None
     
-    # 1. FILTRO DE EXAUSTÃO MÁXIMA / SATURAÇÃO DE DRAGÃO
-    if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
-        return None
-    
-    # 2. FILTRO ANTI-CHOP (Bloqueio de Mercado Caótico / Zigue-Zague Ruim)
+    # 1. FILTRO ANTI-CHOP (Bloqueio absoluto de mercado caótico / zigue-zague de alta volatilidade)
     ultimos_6 = puros[-6:]
     alternancias = sum(1 for i in range(len(ultimos_6) - 1) if ultimos_6[i] != ultimos_6[i+1])
     if alternancias >= 5: 
         return None
 
-    # 3. PRIORIDADE MÁXIMA: ESTRATÉGIA DE DRAGÃO SEGURO (Se há 3 iguais, segue a cor de olhos fechados)
+    # 2. FILTRO DE EXAUSTÃO / SATURAÇÃO DE DRAGÃO LONGÍSSIMO
+    if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
+        return None
+
+    # 3. CONTRA-DRAGÃO / CAÇA À QUEBRA INTELIGENTE (Exaustão Crítica)
+    # Se o dragão esticar exatamente 5 vezes, o motor autónomo assume o risco calculado da primeira inversão
+    if len(puros) >= 5 and all(x == puros[-1] for x in puros[-5:]):
+        return 'V' if puros[-1] == 'A' else 'A'
+
+    # 4. CAPTURA DINÂMICA DE TENDÊNCIA (Dragão Adaptativo)
+    # O motor decide de forma autónoma o fluxo do sapato mal deteta força consistente
     if puros[-1] == puros[-2] == puros[-3]:
         return puros[-1]
+    
+    # Se houver uma duplicação limpa apoiada por contexto recente
+    if puros[-1] == puros[-2] and puros[-3] != puros[-2]:
+        return puros[-1]
 
-    # 4. ESTRATÉGIA DE SIMETRIA / ESPELHO RECENTE (Só atua se NÃO houver dragão ativo)
+    # 5. ESTRATÉGIA DE SIMETRIA / ESPELHO GEOMÉTRICO RECENTE
     if len(puros) >= 6 and puros[-1] == puros[-3] and puros[-2] == puros[-4]:
         return puros[-1]
     
-    # 5. ESTRATÉGIA DE PING-PONG PERFEITO (Alternância estrita nos últimos 4 elementos)
+    # 6. ESTRATÉGIA DE PING-PONG PERFEITO (Alternância estruturada)
     if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
         return 'V' if puros[-1] == 'A' else 'A'
         
-    # 6. ESTRATÉGIA DE DESVIO PADRÃO & JANELA DE FREQUÊNCIA DE CURTO PRAZO
+    # 7. DESVIO PADRÃO & JANELA DE FREQUÊNCIA DE CURTO PRAZO
     a_count = puros.count('A')
     v_count = puros.count('V')
     
@@ -61,7 +77,7 @@ def analisar_tendencia_elite(historico):
     elif ultimos_5.count('V') >= 4:
         return 'V'
 
-    # Se nenhum padrão seguro for atingido, mantém a banca protegida
+    # Mercado sem padrão matemático seguro -> Pausa de proteção inteligente
     return None
 
 @bot.message_handler(commands=['start'])
@@ -76,8 +92,9 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Elite Dragão em Primeiro Ativo!** 🏆🔥🚀\n\n"
-        "Para calibrar o motor, envia as **primeiras 7 jogadas**:\n"
+        "🤖 **Bot de Bac Bo - Autónomo Supremo Ativo!** 🏆🔥🚀\n\n"
+        "O motor gere todas as regras e estratégias de forma independente.\n"
+        "Envia as **primeiras 7 jogadas** para iniciar a calibragem:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -135,21 +152,21 @@ def handle_message(message):
         sessao['state'] = 'WAITING_OUTCOME'
         sessao['gale'] = 0
         
-        sugestao = analisar_tendencia_elite(sessao['history'])
+        sugestao = analisar_tendencia_autonoma(sessao['history'])
         sessao['sugestao_atual'] = sugestao
         
         if sugestao is None:
             resposta = (
-                f"✅ **Calibragem Concluída!**\n"
+                f"✅ **Calibragem Autónoma Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🟡 **MERCADO CAÓTICO / EM FILTRAGEM**\n"
+                f"🟡 **MERCADO SOB ANÁLISE DO MOTOR**\n"
                 f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                f"O motor avançado está à espera de um padrão de alta precisão."
+                f"À espera da oportunidade ideal calculada."
             )
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
-                f"✅ **Calibragem Concluída!**\n"
+                f"✅ **Calibragem Autónoma Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
                 f"🛡️ *Gestão de Risco:* Protegido com até 2 Gales na mesma cor."
@@ -192,14 +209,14 @@ def handle_message(message):
                 sessao['gale'] = 0
                 sessao['sugestao_atual'] = None
                 
-                proxima = analisar_tendencia_elite(sessao['history'])
+                proxima = analisar_tendencia_autonoma(sessao['history'])
                 sessao['sugestao_atual'] = proxima
                 
                 if proxima is None:
                     msg = (
                         f"🎉 **GREEN / VITÓRIA!** 🟢\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🟡 **MERCADO EM PAUSA (Filtros Ativos)**\n"
+                        f"🟡 **MERCADO EM PAUSA (Filtros Autónomos)**\n"
                         f"🛑 **AGUARDAR / NÃO OPERAR**"
                     )
                 else:
@@ -232,7 +249,7 @@ def handle_message(message):
                     sessao['gale'] = 0
                     sessao['sugestao_atual'] = None
                     
-                    proxima = analisar_tendencia_elite(sessao['history'])
+                    proxima = analisar_tendencia_autonoma(sessao['history'])
                     sessao['sugestao_atual'] = proxima
                     
                     if proxima is None:
@@ -254,13 +271,13 @@ def handle_message(message):
         
         else:
             # Se estava em pausa, avalia se já apareceu uma oportunidade de ouro
-            proxima = analisar_tendencia_elite(sessao['history'])
+            proxima = analisar_tendencia_autonoma(sessao['history'])
             sessao['sugestao_atual'] = proxima
             
             if proxima is None:
                 msg = (
                     f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n"
-                    f"🟡 **Mercado sob inspeção de filtros elite.**\n"
+                    f"🟡 **Mercado sob inspeção do motor autónomo.**\n"
                     f"🛑 **AGUARDAR / NÃO OPERAR**\n"
                     f"Continua a enviar os resultados."
                 )
