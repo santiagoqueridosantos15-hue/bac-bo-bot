@@ -1,4 +1,4 @@
-import telebot
+   import telebot
 import os
 from flask import Flask
 from threading import Thread
@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Elite Dragão Seguro + 2 Gales) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Elite com Prioridade ao Dragão + 2 Gales) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -22,7 +22,7 @@ user_sessions = {}
 
 def analisar_tendencia_elite(historico):
     """
-    MOTOR MATEMÁTICO ELITE (Dragão Conservador ao 3º igual + Filtros Avançados):
+    MOTOR MATEMÁTICO ELITE (Prioridade Máxima ao Dragão + Filtros Avançados):
     - Retorna 'A', 'V' ou None (Pausa de Segurança).
     """
     puros = [x for x in historico if x in ['A', 'V']]
@@ -39,12 +39,12 @@ def analisar_tendencia_elite(historico):
     if alternancias >= 5: 
         return None
 
-    # 3. ESTRATÉGIA DE SIMETRIA / ESPELHO RECENTE
-    if len(puros) >= 6 and puros[-1] == puros[-3] and puros[-2] == puros[-4]:
+    # 3. PRIORIDADE MÁXIMA: ESTRATÉGIA DE DRAGÃO SEGURO (Se há 3 iguais, segue a cor de olhos fechados)
+    if puros[-1] == puros[-2] == puros[-3]:
         return puros[-1]
 
-    # 4. ESTRATÉGIA DE DRAGÃO SEGURO (Só dispara ao 3º resultado igual: V V V ou A A A)
-    if puros[-1] == puros[-2] == puros[-3]:
+    # 4. ESTRATÉGIA DE SIMETRIA / ESPELHO RECENTE (Só atua se NÃO houver dragão ativo)
+    if len(puros) >= 6 and puros[-1] == puros[-3] and puros[-2] == puros[-4]:
         return puros[-1]
     
     # 5. ESTRATÉGIA DE PING-PONG PERFEITO (Alternância estrita nos últimos 4 elementos)
@@ -81,7 +81,7 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Elite Dragão Seguro Ativo!** 🏆🔥🚀\n\n"
+        "🤖 **Bot de Bac Bo - Elite Dragão em Primeiro Ativo!** 🏆🔥🚀\n\n"
         "Para calibrar o motor, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
