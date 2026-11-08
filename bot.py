@@ -207,7 +207,7 @@ def handle_message(message):
                 sessao['gale'] += 1
                 gale_atual = sessao['gale']
                 
-                if gale_atual <= 1:
+                if gale_atual <= 2:
                     cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
                     
                     msg = (
