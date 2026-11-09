@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Supremo Evolution v4 + Fibonacci) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Nível Máximo + Polling) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -20,59 +20,39 @@ def run_web():
 # Memória de sessões por utilizador com estatísticas avançadas
 user_sessions = {}
 
-# Progressão Fibonacci suave para proteger o lucro líquido (Substitui o Martingale agressivo)
-FIB_MULTIPLIERS = [1, 1, 2] # 3 passos seguros no total
-
-def analisar_tendencia_evolution(historico):
+def analisar_tendencia(historico):
     """
-    MOTOR SUPREMO EVOLUTION (Score Dinâmico + Confluência + Caça à Exaustão):
-    - Retorna tuplo: (Cor ('A' ou 'V'), Força da Oportunidade) ou (None, None).
+    MOTOR MATEMÁTICO DE NÍVEL MÁXIMO (Bac Bo):
+    - Analisa Dragão, Ping-Pong, Desvio Padrão e Limite de Exaustão.
+    - Retorna 'A', 'V' ou None (Pausa de Segurança).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     if len(puros) < 6:
-        return None, None
+        return None
     
+    # Filtro de Exaustão: Se a mesma cor se repetir 6+ vezes, o mercado está saturado -> Pausa para evitar inversão violenta
+    if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
+        return None
+    
+    # 1. TENDÊNCIA FORTE / DRAGÃO: Se os últimos 3 resultados são iguais, segue a inércia
+    if puros[-1] == puros[-2] == puros[-3]:
+        return puros[-1]
+    
+    # 2. PING-PONG PERFEITO: Alternância estrita nos últimos 4 elementos
+    if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
+        return 'V' if puros[-1] == 'A' else 'A'
+        
+    # 3. DESVIO PADRÃO / EQUILÍBRIO DE FREQUÊNCIA
     a_count = puros.count('A')
     v_count = puros.count('V')
     
-    # 1. FILTRO ANTI-CHOP (Bloqueio absoluto de mercado caótico)
-    ultimos_6 = puros[-6:]
-    alternancias = sum(1 for i in range(len(ultimos_6) - 1) if ultimos_6[i] != ultimos_6[i+1])
-    if alternancias >= 5: 
-        return None, None
-
-    # 2. FILTRO DE EXAUSTÃO / SATURAÇÃO DE DRAGÃO LONGÍSSIMO
-    if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
-        return None, None
-
-    # 3. CONFLUÊNCIA MÚLTIPLA / SUPER OURO: Dragão Seguro + Desvio Padrão a favor
-    if puros[-1] == puros[-2] == puros[-3]:
-        cor = puros[-1]
-        if (cor == 'A' and a_count >= v_count + 2) or (cor == 'V' and v_count >= a_count + 2):
-            return cor, "🌟🌟 SUPER OURO (Confluência Total)"
-        return cor, "⭐ PADRÃO"
-
-    # 4. CONTRA-DRAGÃO / CAÇA À QUEBRA (Exaustão Crítica = Super Oportunidade)
-    if len(puros) >= 5 and all(x == puros[-1] for x in puros[-5:]):
-        cor_inversa = 'V' if puros[-1] == 'A' else 'A'
-        return cor_inversa, "🌟🌟 SUPER OURO (Inversão de Exaustão)"
-
-    # 5. ESTRATÉGIA DE SIMETRIA / ESPELHO GEOMÉTRICO
-    if len(puros) >= 6 and puros[-1] == puros[-3] and puros[-2] == puros[-4]:
-        return puros[-1], "⭐ PADRÃO"
-    
-    # 6. ESTRATÉGIA DE PING-PONG PERFEITO
-    if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
-        cor_pp = 'V' if puros[-1] == 'A' else 'A'
-        return cor_pp, "⭐ PADRÃO"
-        
-    # 7. DESVIO PADRÃO DE CURTO PRAZO
     if a_count >= v_count + 2:
-        return 'V', "⭐ PADRÃO"
+        return 'V'
     elif v_count >= a_count + 2:
-        return 'A', "⭐ PADRÃO"
-
-    return None, None
+        return 'A'
+        
+    # Mercado caótico ou volátil -> Pausa obrigatória para proteger banca
+    return None
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -80,16 +60,14 @@ def send_welcome(message):
     user_sessions[chat_id] = {
         'history': [],
         'state': 'WAITING_7',
-        'step': 0,
+        'gale': 0,
         'sugestao_atual': None,
-        'forca_atual': None,
         'stats': {'wins': 0, 'losses': 0}
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Supremo Evolution v4 Ativo!** 🏆🔥🚀\n\n"
-        "Sistema com Score Dinâmico, Confluência e Recuperação Fibonacci.\n"
-        "Envia as **primeiras 7 jogadas** para iniciar a calibragem:\n"
+        "🤖 **Bot de Bac Bo - Nível Máximo Ativo!** 🏆🔥\n\n"
+        "Para calibrar o motor estatístico avançado, envia as **primeiras 7 jogadas**:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -111,7 +89,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Estatísticas da Sessão Evolution:** 📈\n\n"
+        "📊 **Estatísticas da Sessão Atual:** 📈\n\n"
         f"🎉 **Greens (Vitórias):** `{wins}`\n"
         f"❌ **Losses (Derrotas):** `{losses}`\n"
         f"🎯 **Assertividade (Win Rate):** `{win_rate:.1f}%`\n"
@@ -128,9 +106,8 @@ def handle_message(message):
         user_sessions[chat_id] = {
             'history': [], 
             'state': 'WAITING_7', 
-            'step': 0, 
+            'gale': 0, 
             'sugestao_atual': None,
-            'forca_atual': None,
             'stats': {'wins': 0, 'losses': 0}
         }
     
@@ -146,29 +123,26 @@ def handle_message(message):
         
         sessao['history'] = letras[-7:]
         sessao['state'] = 'WAITING_OUTCOME'
-        sessao['step'] = 0
+        sessao['gale'] = 0
         
-        sugestao, forca = analisar_tendencia_evolution(sessao['history'])
+        sugestao = analisar_tendencia(sessao['history'])
         sessao['sugestao_atual'] = sugestao
-        sessao['forca_atual'] = forca
         
         if sugestao is None:
             resposta = (
-                f"✅ **Calibragem Evolution Concluída!**\n"
+                f"✅ **Calibragem Máxima Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🟡 **MERCADO SOB ANÁLISE DO MOTOR**\n"
+                f"🟡 **MERCADO VOLÁTIL / EXAURIDO**\n"
                 f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                f"À espera da oportunidade ideal calculada."
+                f"O bot está em modo de proteção inteligente à espera de sinal limpo."
             )
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
-            mult = FIB_MULTIPLIERS[sessao['step']]
             resposta = (
-                f"✅ **Calibragem Evolution Concluída!**\n"
+                f"✅ **Calibragem Máxima Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🎯 **Sinal Encontrado ({forca})!**\n"
-                f"Entrar no **{cor_emoji}**\n"
-                f"💰 *Stake Recomendada:* `{mult}x` da tua unidade base."
+                f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
+                f"🛡️ *Gestão de Risco:* Gales protegidos na mesma cor."
             )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
@@ -186,18 +160,18 @@ def handle_message(message):
             sessao['history'].pop(0)
             
         # Se temos uma aposta/ciclo ativo em curso
-        if sessao['step'] > 0 or sessao['sugestao_atual'] is not None:
+        if sessao['gale'] > 0 or sessao['sugestao_atual'] is not None:
             cor_em_curso = sessao['sugestao_atual']
             
-            # TRATAMENTO DE EMPATE (T): Devolve a aposta, mantém o passo atual e repete
+            # TRATAMENTO DE EMPATE (T): Devolve a aposta, mantém o nível de gale atual e repete
             if resultado_real == 'T':
                 cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
-                mult = FIB_MULTIPLIERS[sessao['step']]
+                gale_atual = sessao['gale']
                 
                 msg = (
                     f"⚪ **EMPATE (T) - Aposta Devolvida**\n"
-                    f"O empate não altera o ciclo. Repetir entrada.\n\n"
-                    f"🎯 **Entrar no:** {cor_emoji} (`{mult}x` unidade)"
+                    f"O empate não altera o ciclo. (Gale atual: `{gale_atual}`)\n\n"
+                    f"🎯 **Repetir Entrada no:** {cor_emoji}"
                 )
                 bot.reply_to(message, msg, parse_mode="Markdown")
                 return
@@ -205,95 +179,86 @@ def handle_message(message):
             # TRATAMENTO DE VITÓRIA (Green)
             elif resultado_real == cor_em_curso:
                 sessao['stats']['wins'] += 1
-                sessao['step'] = 0  # Reseta para o início da progressão
+                sessao['gale'] = 0
                 sessao['sugestao_atual'] = None
-                sessao['forca_atual'] = None
                 
-                proxima, forca_prox = analisar_tendencia_evolution(sessao['history'])
+                proxima = analisar_tendencia(sessao['history'])
                 sessao['sugestao_atual'] = proxima
-                sessao['forca_atual'] = forca_prox
                 
                 if proxima is None:
                     msg = (
                         f"🎉 **GREEN / VITÓRIA!** 🟢\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🟡 **MERCADO EM PAUSA (Filtros Evolution)**\n"
+                        f"🟡 **MERCADO EM PAUSA (Filtro de Segurança)**\n"
                         f"🛑 **AGUARDAR / NÃO OPERAR**"
                     )
                 else:
                     cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
-                    mult = FIB_MULTIPLIERS[sessao['step']]
                     msg = (
                         f"🎉 **GREEN / VITÓRIA!** 🟢\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🎯 **Nova Oportunidade ({forca_prox}):** Entrar no **{cor_emoji}** (`{mult}x` unidade)"
+                        f"🎯 **Nova Oportunidade:** Entrar no **{cor_emoji}**"
                     )
                 bot.reply_to(message, msg, parse_mode="Markdown")
                 return
                 
-            # TRATAMENTO DE DERROTA (Red) -> Avança na Progressão Fibonacci Suave
+            # TRATAMENTO DE DERROTA (Red) -> Avança no Gale mantendo obrigatoriamente a cor
             else:
-                sessao['step'] += 1
+                sessao['gale'] += 1
+                gale_atual = sessao['gale']
                 
-                if sessao['step'] < len(FIB_MULTIPLIERS):
+                if gale_atual <= 2:
                     cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
-                    mult = FIB_MULTIPLIERS[sessao['step']]
                     
                     msg = (
                         f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
-                        f"🔄 A avançar para o **Passo {sessao['step']+1} da Recuperação** 🛡️\n\n"
-                        f"🎯 **Manter na mesma cor:** {cor_emoji}\n"
-                        f"💰 *Stake Fibonacci:* `{mult}x` unidade"
+                        f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
+                        f"🎯 **Manter na mesma cor:** {cor_emoji}"
                     )
                     bot.reply_to(message, msg, parse_mode="Markdown")
                 else:
-                    # Loss total após esgotar a progressão segura
+                    # Loss total após 2 Gales
                     sessao['stats']['losses'] += 1
-                    sessao['step'] = 0
+                    sessao['gale'] = 0
                     sessao['sugestao_atual'] = None
-                    sessao['forca_atual'] = None
                     
-                    proxima, forca_prox = analisar_tendencia_evolution(sessao['history'])
+                    proxima = analisar_tendencia(sessao['history'])
                     sessao['sugestao_atual'] = proxima
-                    sessao['forca_atual'] = forca_prox
                     
                     if proxima is None:
                         msg = (
-                            f"❌ **LOSS (Fim do Ciclo de Proteção)**\n"
-                            f"Banca protegida. A aguardar estabilização...\n\n"
+                            f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
+                            f"Protegendo banca rigorosamente.\n\n"
                             f"🟡 **MERCADO VOLÁTIL**\n"
                             f"🛑 **AGUARDAR / NÃO OPERAR**"
                         )
                     else:
                         cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
-                        mult = FIB_MULTIPLIERS[sessao['step']]
                         msg = (
-                            f"❌ **LOSS (Fim do Ciclo de Proteção)**\n"
-                            f"A recalcular novas oportunidades...\n\n"
-                            f"🎯 **Nova Oportunidade ({forca_prox}):** Entrar no **{cor_emoji}** (`{mult}x` unidade)"
+                            f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
+                            f"Protegendo banca. A recalcular...\n\n"
+                            f"🎯 **Nova Oportunidade:** Entrar no **{cor_emoji}**"
                         )
                     bot.reply_to(message, msg, parse_mode="Markdown")
                 return
         
         else:
-            # Se estava em pausa, avalia se já apareceu uma oportunidade
-            proxima, forca_prox = analisar_tendencia_evolution(sessao['history'])
+            # Se estava em pausa, avalia se já apareceu uma oportunidade de ouro
+            proxima = analisar_tendencia(sessao['history'])
             sessao['sugestao_atual'] = proxima
-            sessao['forca_atual'] = forca_prox
             
             if proxima is None:
                 msg = (
                     f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n"
-                    f"🟡 **Mercado sob inspeção do motor evolution.**\n"
+                    f"🟡 **Mercado ainda instável ou saturado.**\n"
                     f"🛑 **AGUARDAR / NÃO OPERAR**\n"
                     f"Continua a enviar os resultados."
                 )
             else:
                 cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
-                mult = FIB_MULTIPLIERS[sessao['step']]
                 msg = (
                     f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n\n"
-                    f"🎯 **Oportunidade Encontrada ({forca_prox})!** Entrar no **{cor_emoji}** (`{mult}x` unidade)"
+                    f"🎯 **Oportunidade de Ouro Encontrada!** Entrar no **{cor_emoji}**"
                 )
             bot.reply_to(message, msg, parse_mode="Markdown")
 
