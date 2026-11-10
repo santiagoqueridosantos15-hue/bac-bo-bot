@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Nível Máximo + Gale Adaptativo) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Original + Escudo Anti-Loss) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -22,7 +22,7 @@ user_sessions = {}
 
 def analisar_tendencia(historico):
     """
-    MOTOR MATEMÁTICO DE NÍVEL MÁXIMO (Bac Bo):
+    MOTOR MATEMÁTICO ORIGINAL (Bac Bo):
     - Analisa Dragão, Ping-Pong, Desvio Padrão e Limite de Exaustão.
     - Retorna 'A', 'V' ou None (Pausa de Segurança).
     """
@@ -62,12 +62,13 @@ def send_welcome(message):
         'state': 'WAITING_7',
         'gale': 0,
         'sugestao_atual': None,
+        'cooldown': 0,  # Contador de segurança pós-loss
         'stats': {'wins': 0, 'losses': 0}
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Gale Adaptativo Ativo!** 🏆🔥\n\n"
-        "O motor agora adapta-se se o sapato mudar a meio do ciclo.\n"
+        "🤖 **Bot de Bac Bo - Versão Blindada Oficial!** 🏆🔥\n\n"
+        "Motor original restaurado com proteção inteligente contra sequências más.\n"
         "Envia as **primeiras 7 jogadas** para calibrar:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
@@ -109,6 +110,7 @@ def handle_message(message):
             'state': 'WAITING_7', 
             'gale': 0, 
             'sugestao_atual': None,
+            'cooldown': 0,
             'stats': {'wins': 0, 'losses': 0}
         }
     
@@ -125,6 +127,7 @@ def handle_message(message):
         sessao['history'] = letras[-7:]
         sessao['state'] = 'WAITING_OUTCOME'
         sessao['gale'] = 0
+        sessao['cooldown'] = 0
         
         sugestao = analisar_tendencia(sessao['history'])
         sessao['sugestao_atual'] = sugestao
@@ -141,8 +144,7 @@ def handle_message(message):
             resposta = (
                 f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
-                f"🛡️ *Gale Inteligente Ativo*"
+                f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**"
             )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
@@ -159,11 +161,23 @@ def handle_message(message):
         if len(sessao['history']) > 7:
             sessao['history'].pop(0)
             
+        # Se o robô estiver em modo de arrefecimento (cooldown) após um Loss total
+        if sessao['cooldown'] > 0:
+            sessao['cooldown'] -= 1
+            msg = (
+                f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n\n"
+                f"🛡️ **MODO DE PROTEÇÃO ATIVO (Cool-down)**\n"
+                f"Faltam `{sessao['cooldown']}` jogadas de pausa para o mercado acalmar.\n"
+                f"🛑 **NÃO OPERAR / A AGUARDAR ESTABILIZAÇÃO**"
+            )
+            bot.reply_to(message, msg, parse_mode="Markdown")
+            return
+            
         # Se temos uma aposta/ciclo ativo em curso
         if sessao['gale'] > 0 or sessao['sugestao_atual'] is not None:
             cor_em_curso = sessao['sugestao_atual']
             
-            # TRATAMENTO DE EMPATE (T): Devolve a aposta, mantém o nível e repete
+            # TRATAMENTO DE EMPATE (T): Devolve a aposta, mantém o nível atual e repete
             if resultado_real == 'T':
                 cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
                 gale_atual = sessao['gale']
@@ -202,61 +216,31 @@ def handle_message(message):
                 bot.reply_to(message, msg, parse_mode="Markdown")
                 return
                 
-            # TRATAMENTO DE DERROTA (Red) -> AQUI ESTÁ A MUDANÇA INTELIGENTE!
+            # TRATAMENTO DE DERROTA (Red) -> Avança no Gale mantendo obrigatoriamente a cor original
             else:
                 sessao['gale'] += 1
                 gale_atual = sessao['gale']
                 
                 if gale_atual <= 2:
-                    # RE-AVALIAÇÃO INTELIGENTE DO SAPATO PARA O GALE:
-                    # O motor verifica se o mercado mudou de estratégia neste preciso segundo
-                    nova_analise = analisar_tendencia(sessao['history'])
-                    
-                    if nova_analise is not None and nova_analise != cor_em_curso:
-                        # Se o motor detetou que o mercado mudou, ADAPTA A COR DO GALE!
-                        sessao['sugestao_atual'] = nova_analise
-                        cor_em_curso = nova_analise
-                        cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
-                        
-                        msg = (
-                            f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
-                            f"🔄 **GALE {gale_atual} ADAPTATIVO 🛡️**\n"
-                            f"💡 *O motor detetou mudança de padrão no sapato!*\n\n"
-                            f"🎯 **Mudar direção para:** {cor_emoji}"
-                        )
-                    else:
-                        # Se o mercado continua na mesma linha ou sem sinal claro, mantém a cor original do Gale
-                        cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
-                        msg = (
-                            f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
-                            f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
-                            f"🎯 **Manter na mesma cor:** {cor_emoji}"
-                        )
-                    
+                    cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
+                    msg = (
+                        f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
+                        f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
+                        f"🎯 **Manter na mesma cor:** {cor_emoji}"
+                    )
                     bot.reply_to(message, msg, parse_mode="Markdown")
                 else:
-                    # Loss total após 2 Gales
+                    # Loss total após 2 Gales -> ATIVA O COOLDOWN DE PROTEÇÃO!
                     sessao['stats']['losses'] += 1
                     sessao['gale'] = 0
                     sessao['sugestao_atual'] = None
+                    sessao['cooldown'] = 3  # Pausa obrigatória de 3 jogadas para evitar sequências de losses
                     
-                    proxima = analisar_tendencia(sessao['history'])
-                    sessao['sugestao_atual'] = proxima
-                    
-                    if proxima is None:
-                        msg = (
-                            f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
-                            f"Protegendo banca rigorosamente.\n\n"
-                            f"🟡 **MERCADO VOLÁTIL**\n"
-                            f"🛑 **AGUARDAR / NÃO OPERAR**"
-                        )
-                    else:
-                        cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
-                        msg = (
-                            f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
-                            f"Protegendo banca. A recalcular...\n\n"
-                            f"🎯 **Nova Oportunidade:** Entrar no **{cor_emoji}**"
-                        )
+                    msg = (
+                        f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
+                        f"🛡️ **Escudo ativado:** Pausa de segurança de 3 jogadas para proteger a banca de sapatos envenenados.\n\n"
+                        f"🛑 **AGUARDAR / NÃO OPERAR**"
+                    )
                     bot.reply_to(message, msg, parse_mode="Markdown")
                 return
         
