@@ -2,7 +2,6 @@ import telebot
 import os
 from flask import Flask
 from threading import Thread
-from collections import Counter
 
 TOKEN = '8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0'
 bot = telebot.TeleBot(TOKEN)
@@ -11,7 +10,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Elite Dynamic Flow) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor + Gale Controlado) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -20,32 +19,22 @@ def run_web():
 user_sessions = {}
 
 def motor_dinamico_assertivo(historico):
-    """
-    MOTOR DINÂMICO DE ALTA FREQUÊNCIA:
-    - Analisa dragões, ping-pong, duplets e desvio de curto prazo de forma mais ágil.
-    - Garante um fluxo constante de entradas sem perder a qualidade.
-    """
     puros = [x for x in historico if x in ['A', 'V']]
     if len(puros) < 6:
         return None
     
-    # 1. Filtro leve de exaustão (só pausa se a cor repetir 6 vezes seguidas)
     if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
         return None
 
-    # 2. TENDÊNCIA FORTE / DRAGÃO (Se os últimos 3 resultados são iguais)
     if puros[-1] == puros[-2] == puros[-3]:
         return puros[-1]
     
-    # 3. PING-PONG PERFEITO (Alternância nos últimos 4)
     if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
         return 'V' if puros[-1] == 'A' else 'A'
 
-    # 4. PADRÃO DE DUPLETS / PARES GÊMEOS (ex: A A V V)
     if len(puros) >= 4 and puros[-1] == puros[-2] and puros[-3] == puros[-4] and puros[-1] != puros[-3]:
         return 'V' if puros[-1] == 'A' else 'A'
 
-    # 5. LEI DE COMPENSAÇÃO RÁPIDA (Se houver desvio nas últimas 6 jogadas)
     ultimas_seis = puros[-6:]
     if ultimas_seis.count('A') >= 5:
         return 'V'
@@ -59,13 +48,15 @@ def send_welcome(message):
     chat_id = message.chat.id
     user_sessions[chat_id] = {
         'history': [],
+        'fase_gale': 0, # 0 = Entrada Normal, 1 = G1 (Gale 1)
+        'cor_alvo': None,
         'stats': {'wins': 0, 'losses': 0}
     }
     
     texto = (
-        "🤖 **Bac Bo - Elite Dynamic (Zero Gale & Empate)** 🏆🔥\n\n"
-        "Motor ajustado para dar mais entradas sem perder a assertividade.\n"
-        "Envia o fluxo de resultados do sapato (ex: `A V V T A A V A...`) para começar a operar ativamente!"
+        "🤖 **Bac Bo - Elite com Gale Controlado & Empate** 🏆🔥\n\n"
+        "Motor matemático ativo + Estrutura de recuperação (G1).\n"
+        "Envia o fluxo de resultados do sapato (ex: `A V V T A A V A...`)!"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -83,7 +74,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Estatísticas do Canal (Dynamic):** 📈\n\n"
+        "📊 **Estatísticas do Canal (Com Gale):** 📈\n\n"
         f"🎉 **Wins (Acertos):** `{wins}`\n"
         f"❌ **Losses (Erros):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -99,6 +90,8 @@ def handle_message(message):
     if chat_id not in user_sessions:
         user_sessions[chat_id] = {
             'history': [], 
+            'fase_gale': 0,
+            'cor_alvo': None,
             'stats': {'wins': 0, 'losses': 0}
         }
     
@@ -109,29 +102,73 @@ def handle_message(message):
         bot.reply_to(message, "⚠️ Envia resultados válidos (`A`, `V` ou `T`).", parse_mode="Markdown")
         return
         
-    # Acumular histórico no sapato (mantém as últimas 100 rondas)
-    sessao['history'].extend(novas_letras)
-    if len(sessao['history']) > 100:
-        sessao['history'] = sessao['history'][-100:]
+    # Vamos processar ronda a ronda para validar o Gale caso já estejamos em jogo ativo
+    for resultado_real in novas_letras:
+        sessao['history'].append(resultado_real)
+        if len(sessao['history']) > 100:
+            sessao['history'] = sessao['history'][-100:]
+            
+        # Se estivermos à espera do resultado de uma entrada anterior ou G1
+        if sessao['cor_alvo'] is not None:
+            cor_esperada = sessao['cor_alvo']
+            
+            # Se sair Empate (T), protege
+            if resultado_real == 'T':
+                sessao['stats']['wins'] += 1
+                sessao['cor_alvo'] = None
+                sessao['fase_gale'] = 0
+                bot.reply_to(message, f"🟢 **WIN NO EMPATE (Proteção Coberta)** 🟡\n📊 Saiu T. Vamos à próxima!", parse_mode="Markdown")
+                continue
+                
+            elif resultado_real == cor_esperada:
+                sessao['stats']['wins'] += 1
+                sessao['cor_alvo'] = None
+                sessao['fase_gale'] = 0
+                bot.reply_to(message, f"🎉 **WIN / GREEN!** 🟢✨\nSaiu `{resultado_real}` com sucesso!", parse_mode="Markdown")
+                continue
+                
+            else:
+                # Falhou a primeira (Normal). Vamos testar o Gale 1 (G1)?
+                if sessao['fase_gale'] == 0:
+                    sessao['fase_gale'] = 1 # Passa para G1 na mesma cor
+                    cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
+                    bot.reply_to(message, 
+                        f"⚠️ **LOSS na Entrada Principal (Saiu {resultado_real})**\n\n"
+                        f"🔄 **ENTRADA DE RECUPERAÇÃO: GALE 1 (G1)** 🚨\n"
+                        f"👉 **APOSTAR NA COR:** {cor_nome} (Dobrar a mão)\n"
+                        f"🛡️ **PROTEGER NO EMPATE:** 🟡 (T)", 
+                        parse_mode="Markdown"
+                    )
+                    continue
+                else:
+                    # Se falhou o G1, dá Loss definitivo e reseta
+                    sessao['stats']['losses'] += 1
+                    sessao['cor_alvo'] = None
+                    sessao['fase_gale'] = 0
+                    bot.reply_to(message, f"❌ **LOSS FINAL (G1 Não Pagou - Saiu {resultado_real})**\n🛑 A aguardar novo sinal limpo...", parse_mode="Markdown")
+                    continue
+
+    # Se não houver nenhuma jogada pendente de Gale, o motor procura uma nova oportunidade
+    if sessao['cor_alvo'] is None:
+        sugestao = motor_dinamico_assertivo(sessao['history'])
         
-    # Executar motor dinâmico
-    sugestao = motor_dinamico_assertivo(sessao['history'])
-    
-    if sugestao is None:
-        resposta = (
-            f"📊 **Mesa em Análise Dinâmica** ({len(sessao['history'])} rondas)\n"
-            f"🛡️ *A aguardar padrão claro de curto prazo...*"
-        )
-    else:
-        cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
-        resposta = (
-            f"🎲 **DADOS** 🎲\n"
-            f"🚨 **ENTRADA CONFIRMADA**\n"
-            f"👉 **APOSTAR NA COR:** {cor_nome}\n"
-            f"🛡️ **PROTEGER NO EMPATE:** 🟡 (T)"
-        )
-        
-    bot.reply_to(message, resposta, parse_mode="Markdown")
+        if sugestao is None:
+            resposta = (
+                f"📊 **Mesa em Análise** ({len(sessao['history'])} rondas)\n"
+                f"🛡️ *A aguardar padrão ideal para nova entrada...*"
+            )
+        else:
+            sessao['cor_alvo'] = sugestao
+            sessao['fase_gale'] = 0
+            cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
+            resposta = (
+                f"🎲 **DADOS** 🎲\n"
+                f"🚨 **ENTRADA CONFIRMADA (Sinal Principal)**\n"
+                f"👉 **APOSTAR NA COR:** {cor_nome}\n"
+                f"🛡️ **PROTEGER NO EMPATE:** 🟡 (T)"
+            )
+            
+        bot.reply_to(message, resposta, parse_mode="Markdown")
 
 if __name__ == '__main__':
     t = Thread(target=run_web)
