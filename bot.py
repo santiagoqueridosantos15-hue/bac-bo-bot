@@ -3,7 +3,6 @@ import os
 from flask import Flask
 from threading import Thread
 from collections import Counter
-from math import sqrt
 
 TOKEN = '8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0'
 bot = telebot.TeleBot(TOKEN)
@@ -12,64 +11,45 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Master Elite 96% Zero Gale) a funcionar 24/7!"
+    return "Bot de Bac Bo (Elite Dynamic Flow) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
 
-# Memória persistente e avançada por canal/utilizador
 user_sessions = {}
 
-def wilson_interval(successes, total, z=1.96):
-    """Calcula o intervalo de confiança estatístico real (Rigorous Wilson Score)."""
-    if total == 0:
-        return 0.0, 1.0
-    p = successes / total
-    den = 1 + z*z/total
-    center = p + z*z/(2*total)
-    margin = z * sqrt(p*(1-p)/total + z*z/(4*total*total))
-    return (center - margin) / den, (center + margin) / den
-
-def motor_master_elite(historico):
+def motor_dinamico_assertivo(historico):
     """
-    MOTOR DE NÍVEL INSTITUCIONAL (Zero Gale & Cobertura de Empate):
-    - Analisa transições de Markov, histórico profundo e limites estatísticos.
-    - Retorna 'A', 'V' ou None (Silêncio de Proteção se o mercado estiver incerto).
+    MOTOR DINÂMICO DE ALTA FREQUÊNCIA:
+    - Analisa dragões, ping-pong, duplets e desvio de curto prazo de forma mais ágil.
+    - Garante um fluxo constante de entradas sem perder a qualidade.
     """
     puros = [x for x in historico if x in ['A', 'V']]
-    if len(puros) < 15:
-        return None  # Requer base consistente para calcular probabilidades de topo
+    if len(puros) < 6:
+        return None
     
-    # 1. Filtro de Saturação Extrema (Evita quebrar em dragões longos cegos)
-    if len(puros) >= 8 and all(x == puros[-1] for x in puros[-8:]):
+    # 1. Filtro leve de exaustão (só pausa se a cor repetir 6 vezes seguidas)
+    if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
         return None
 
-    # 2. ANÁLISE DE MARKOV DE ORDEM 2 (Comportamento preditivo exato das últimas 2 jogadas)
-    ultimo_par = tuple(puros[-2:])
-    seguintes = []
-    for i in range(len(puros) - 2):
-        if tuple(puros[i:i+2]) == ultimo_par:
-            seguintes.append(puros[i+2])
-            
-    if len(seguintes) >= 4:
-        contagem = Counter(seguintes)
-        total_p = len(seguintes)
-        for cor in ['A', 'V']:
-            inf_limite, _ = wilson_interval(contagem[cor], total_p)
-            # Se o limite inferior estatístico provar que a probabilidade é superior a 70%
-            if inf_limite > 0.70:
-                return cor
-
-    # 3. PING-PONG RIGOROSO DE CURTO PRAZO
-    if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4] and puros[-4] != puros[-5]:
+    # 2. TENDÊNCIA FORTE / DRAGÃO (Se os últimos 3 resultados são iguais)
+    if puros[-1] == puros[-2] == puros[-3]:
+        return puros[-1]
+    
+    # 3. PING-PONG PERFEITO (Alternância nos últimos 4)
+    if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
         return 'V' if puros[-1] == 'A' else 'A'
 
-    # 4. LEI DE COMPENSAÇÃO DE CURTO PRAZO (Desvio estatístico agudo nas últimas 10 jogadas)
-    ultimas_dez = puros[-10:]
-    if ultimas_dez.count('A') >= 8:
+    # 4. PADRÃO DE DUPLETS / PARES GÊMEOS (ex: A A V V)
+    if len(puros) >= 4 and puros[-1] == puros[-2] and puros[-3] == puros[-4] and puros[-1] != puros[-3]:
+        return 'V' if puros[-1] == 'A' else 'A'
+
+    # 5. LEI DE COMPENSAÇÃO RÁPIDA (Se houver desvio nas últimas 6 jogadas)
+    ultimas_seis = puros[-6:]
+    if ultimas_seis.count('A') >= 5:
         return 'V'
-    elif ultimas_dez.count('V') >= 8:
+    elif ultimas_seis.count('V') >= 5:
         return 'A'
 
     return None
@@ -83,9 +63,9 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bac Bo - Master Elite (Zero Gale & Proteção no Empate)** 🏆🔥\n\n"
-        "Software configurado com rigor estatístico institucional.\n"
-        "Alimenta o robô com o fluxo contínuo do sapato (ex: `A V V T A A V A...`) para começar a operar com precisão cirúrgica!"
+        "🤖 **Bac Bo - Elite Dynamic (Zero Gale & Empate)** 🏆🔥\n\n"
+        "Motor ajustado para dar mais entradas sem perder a assertividade.\n"
+        "Envia o fluxo de resultados do sapato (ex: `A V V T A A V A...`) para começar a operar ativamente!"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -103,11 +83,11 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Estatísticas do Canal (Master Elite):** 📈\n\n"
+        "📊 **Estatísticas do Canal (Dynamic):** 📈\n\n"
         f"🎉 **Wins (Acertos):** `{wins}`\n"
         f"❌ **Losses (Erros):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
-        f"📜 Histórico Ativo em Memória: `{len(sessao['history'])} rondas`"
+        f"📜 Histórico Ativo: `{len(sessao['history'])} rondas`"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -129,19 +109,18 @@ def handle_message(message):
         bot.reply_to(message, "⚠️ Envia resultados válidos (`A`, `V` ou `T`).", parse_mode="Markdown")
         return
         
-    # Acumular histórico no sapato (mantém as últimas 150 rondas para máxima precisão)
+    # Acumular histórico no sapato (mantém as últimas 100 rondas)
     sessao['history'].extend(novas_letras)
-    if len(sessao['history']) > 150:
-        sessao['history'] = sessao['history'][-150:]
+    if len(sessao['history']) > 100:
+        sessao['history'] = sessao['history'][-100:]
         
-    # Correr o motor master elite
-    sugestao = motor_master_elite(sessao['history'])
+    # Executar motor dinâmico
+    sugestao = motor_dinamico_assertivo(sessao['history'])
     
     if sugestao is None:
         resposta = (
-            f"📊 **Mesa em Análise Avançada** ({len(sessao['history'])} rondas registadas)\n"
-            f"🛡️ *Filtro de alta seletividade ativo (Zero Gale).* \n"
-            f"🛑 **AGUARDAR / MERCADO SEM CONFLUÊNCIA DE OURO**"
+            f"📊 **Mesa em Análise Dinâmica** ({len(sessao['history'])} rondas)\n"
+            f"🛡️ *A aguardar padrão claro de curto prazo...*"
         )
     else:
         cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
@@ -149,8 +128,7 @@ def handle_message(message):
             f"🎲 **DADOS** 🎲\n"
             f"🚨 **ENTRADA CONFIRMADA**\n"
             f"👉 **APOSTAR NA COR:** {cor_nome}\n"
-            f"🛡️ **PROTEGER NO EMPATE:** 🟡 (T)\n\n"
-            f"📊 *Sinal validado por Probabilidade Estatística de Topo*"
+            f"🛡️ **PROTEGER NO EMPATE:** 🟡 (T)"
         )
         
     bot.reply_to(message, resposta, parse_mode="Markdown")
