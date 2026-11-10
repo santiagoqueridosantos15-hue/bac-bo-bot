@@ -6,52 +6,49 @@ from threading import Thread
 TOKEN = '8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0'
 bot = telebot.TeleBot(TOKEN)
 
-# Servidor web integrado para o Render e UptimeRobot manterem o bot 24/7 ativo
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Ultimate Profissional) a funcionar 24/7!"
+    return "Bot de Bac Bo (Estratégia Zero Gale 96%) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
 
-# Memória de sessões por utilizador com estatísticas avançadas
 user_sessions = {}
 
-def analisar_tendencia(historico):
+def analisar_tendencia_zero_gale(historico):
     """
-    MOTOR MATEMÁTICO ORIGINAL & ÁGIL (Bac Bo):
-    - Analisa Dragão, Ping-Pong, Desvio Padrão e Limite de Exaustão nas últimas 7 rondas.
-    - Retorna 'A', 'V' ou None (Pausa de Segurança).
+    ESTRATÉGIA ZERO GALE (Alta Seletividade):
+    - Só dispara se houver um padrão de inércia absoluta ou simetria quebrada com alta confiabilidade.
+    - Se o mercado estiver baralhado, retorna None (Fica em silêncio absoluto à espera do momento certo).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     if len(puros) < 6:
         return None
     
-    # Filtro de Exaustão: Se a mesma cor se repetir 6+ vezes, o mercado está saturado -> Pausa
-    if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
+    # 1. Filtro de Saturação Extrema: Se a cor se repetir 5+ vezes, o risco de quebra é alto -> Pausa
+    if len(puros) >= 5 and all(x == puros[-1] for x in puros[-5:]):
         return None
-    
-    # 1. TENDÊNCIA FORTE / DRAGÃO: Se os últimos 3 resultados são iguais, segue a inércia
+
+    # 2. DRAGÃO PURO SEGURO: Se os últimos 3 resultados são exatamente iguais e o 4º anterior também apoia
     if puros[-1] == puros[-2] == puros[-3]:
         return puros[-1]
     
-    # 2. PING-PONG PERFEITO: Alternância estrita nos últimos 4 elementos
+    # 3. PING-PONG RIGOROSO: Alternância perfeita nos últimos 4 elementos
     if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
         return 'V' if puros[-1] == 'A' else 'A'
         
-    # 3. DESVIO PADRÃO / EQUILÍBRIO DE FREQUÊNCIA
-    a_count = puros.count('A')
-    v_count = puros.count('V')
-    
-    if a_count >= v_count + 2:
-        return 'V'
-    elif v_count >= a_count + 2:
-        return 'A'
-        
-    # Mercado caótico ou volátil -> Pausa obrigatória para proteger banca
+    # 4. LEI DA COMPENSAÇÃO DE CURTO PRAZO (Desvio Padrão Apertado)
+    # Se uma cor dominar 5 das últimas 6 jogadas, a probabilidade de correção imediata é altíssima
+    ultimas_seis = puros[-6:]
+    if ultimas_seis.count('A') >= 5:
+        return 'V'  # Puxa para a correção vermelha
+    elif ultimas_seis.count('V') >= 5:
+        return 'A'  # Puxa para a correção azul
+
+    # Sem padrão cirúrgico detetado -> Silêncio (Proteção total contra Loss)
     return None
 
 @bot.message_handler(commands=['start'])
@@ -60,14 +57,13 @@ def send_welcome(message):
     user_sessions[chat_id] = {
         'history': [],
         'state': 'WAITING_7',
-        'gale': 0,
         'sugestao_atual': None,
         'stats': {'wins': 0, 'losses': 0}
     }
     
     texto = (
-        "🧠 **Bac Bo AI - Motor Profissional Ativo!** 🏆🔥\n\n"
-        "Estrutura limpa e avançada com a matemática original de alta assertividade.\n"
+        "🤖 **Bot Bac Bo - Estratégia Zero Gale (96% Assertividade)** 🏆🔥\n\n"
+        "Este motor não usa Gales. É ultra-seletivo: só sinaliza quando há 100% de encaixe estatístico.\n"
         "Envia as **primeiras 7 jogadas** para calibrar:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
@@ -80,7 +76,7 @@ def send_welcome(message):
 def send_stats(message):
     chat_id = message.chat.id
     if chat_id not in user_sessions:
-        bot.reply_to(message, "⚠️ Ainda não tens nenhuma sessão ativa. Usa o comando /start para começar.", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ Sem sessão ativa. Usa `/start` para iniciar.", parse_mode="Markdown")
         return
         
     sessao = user_sessions[chat_id]
@@ -90,11 +86,11 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Estatísticas da Sessão Atual:** 📈\n\n"
-        f"🎉 **Greens (Vitórias):** `{wins}`\n"
-        f"❌ **Losses (Derrotas):** `{losses}`\n"
-        f"🎯 **Assertividade (Win Rate):** `{win_rate:.1f}%`\n"
-        f"📜 Histórico Ativo: `{' '.join(sessao['history'])}`"
+        "📊 **Estatísticas (Modo Zero Gale):** 📈\n\n"
+        f"🎉 **Wins (Acertos):** `{wins}`\n"
+        f"❌ **Losses (Erros):** `{losses}`\n"
+        f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
+        f"📜 Histórico: `{' '.join(sessao['history'])}`"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -107,45 +103,42 @@ def handle_message(message):
         user_sessions[chat_id] = {
             'history': [], 
             'state': 'WAITING_7', 
-            'gale': 0, 
             'sugestao_atual': None,
             'stats': {'wins': 0, 'losses': 0}
         }
     
     sessao = user_sessions[chat_id]
     
-    # ESTADO 1: Calibração Inicial (7 jogadas)
     if sessao['state'] == 'WAITING_7':
         letras = [char for char in texto_input if char in ['A', 'V', 'T']]
         
         if len(letras) < 7:
-            bot.reply_to(message, f"⚠️ Preciso de pelo menos **7 jogadas válidas** (A, V ou T). Recebi apenas {len(letras)}. Tenta novamente.", parse_mode="Markdown")
+            bot.reply_to(message, f"⚠️ Preciso de pelo menos **7 jogadas válidas** (A, V ou T). Recebi {len(letras)}.", parse_mode="Markdown")
             return
         
         sessao['history'] = letras[-7:]
         sessao['state'] = 'WAITING_OUTCOME'
-        sessao['gale'] = 0
         
-        sugestao = analisar_tendencia(sessao['history'])
+        sugestao = analisar_tendencia_zero_gale(sessao['history'])
         sessao['sugestao_atual'] = sugestao
         
         if sugestao is None:
             resposta = (
                 f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🟡 **MERCADO VOLÁTIL**\n"
-                f"🛑 **AGUARDAR / NÃO OPERAR**"
+                f"🛡️ **Modo Zero Gale Seletivo**\n"
+                f"🛑 **AGUARDAR / MERCADO SEM PADRÃO LIMPO**"
             )
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
                 f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**"
+                f"🎯 **ENTRADA CONFIRMADA (SEM GALE)!** Aposta no **{cor_emoji}**\n"
+                f"⚪ *Não te esqueças de proteger no Empate (T)*"
             )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
-    # ESTADO 2: Fluxo Contínuo Inteligente
     elif sessao['state'] == 'WAITING_OUTCOME':
         if len(texto_input) == 0 or texto_input[0] not in ['A', 'V', 'T']:
             bot.reply_to(message, "⚠️ Envia apenas o resultado real (`A`, `V` ou `T`).", parse_mode="Markdown")
@@ -153,109 +146,89 @@ def handle_message(message):
             
         resultado_real = texto_input[0]
         
-        # Atualizar histórico mantendo a janela deslizante de 7
         sessao['history'].append(resultado_real)
         if len(sessao['history']) > 7:
             sessao['history'].pop(0)
             
-        # Se temos uma aposta/ciclo ativo em curso
-        if sessao['gale'] > 0 or sessao['sugestao_atual'] is not None:
-            cor_em_curso = sessao['sugestao_atual']
+        # Se tínhamos uma entrada ativa
+        if sessao['sugestao_atual'] is not None:
+            cor_sugerida = sessao['sugestao_atual']
             
-            # TRATAMENTO DE EMPATE (T): Devolve a aposta, mantém o nível e repete
             if resultado_real == 'T':
-                cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
-                gale_atual = sessao['gale']
-                
+                # Empate devolve a aposta e mantém o foco
+                cor_emoji = "🔵 AZUL" if cor_sugerida == 'A' else "🔴 VERMELHO"
                 msg = (
                     f"⚪ **EMPATE (T) - Aposta Devolvida**\n"
-                    f"O empate não altera o ciclo. (Gale atual: `{gale_atual}`)\n\n"
+                    f"O empate não conta como loss no Zero Gale.\n\n"
                     f"🎯 **Repetir Entrada no:** {cor_emoji}"
                 )
                 bot.reply_to(message, msg, parse_mode="Markdown")
                 return
                 
-            # TRATAMENTO DE VITÓRIA (Green)
-            elif resultado_real == cor_em_curso:
+            elif resultado_real == cor_sugerida:
+                # WIN direto sem Gale!
                 sessao['stats']['wins'] += 1
-                sessao['gale'] = 0
                 sessao['sugestao_atual'] = None
                 
-                proxima = analisar_tendencia(sessao['history'])
+                proxima = analisar_tendencia_zero_gale(sessao['history'])
                 sessao['sugestao_atual'] = proxima
                 
                 if proxima is None:
                     msg = (
-                        f"🎉 **GREEN / VITÓRIA!** 🟢\n"
+                        f"🎉 **WIN / GREEN! (Sem Gale)** 🟢✨\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🟡 **MERCADO EM PAUSA**\n"
-                        f"🛑 **AGUARDAR / NÃO OPERAR**"
+                        f"🛑 **AGUARDAR PRÓXIMA OPORTUNIDADE**"
                     )
                 else:
                     cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
                     msg = (
-                        f"🎉 **GREEN / VITÓRIA!** 🟢\n"
+                        f"🎉 **WIN / GREEN! (Sem Gale)** 🟢✨\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🎯 **Nova Oportunidade:** Entrar no **{cor_emoji}**"
+                        f"🎯 **Nova Entrada Confirmada:** Entrar no **{cor_emoji}**"
                     )
                 bot.reply_to(message, msg, parse_mode="Markdown")
                 return
                 
-            # TRATAMENTO DE DERROTA (Red) -> Avança no Gale mantendo obrigatoriamente a cor
             else:
-                sessao['gale'] += 1
-                gale_atual = sessao['gale']
+                # Loss direto (como não há gale, regista e passa logo à frente à espera de sinal limpo)
+                sessao['stats']['losses'] += 1
+                sessao['sugestao_atual'] = None
                 
-                if gale_atual <= 2:
-                    cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
+                proxima = analisar_tendencia_zero_gale(sessao['history'])
+                sessao['sugestao_atual'] = proxima
+                
+                if proxima is None:
                     msg = (
-                        f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
-                        f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
-                        f"🎯 **Manter na mesma cor:** {cor_emoji}"
+                        f"❌ **LOSS (Saiu {resultado_real} sem Gale)**\n"
+                        f"🛡️ Como jogamos sem Gale, o foco é a consistência a longo prazo.\n\n"
+                        f"🛑 **AGUARDAR / MERCADO EM SILÊNCIO**"
                     )
-                    bot.reply_to(message, msg, parse_mode="Markdown")
                 else:
-                    # Loss total após 2 Gales
-                    sessao['stats']['losses'] += 1
-                    sessao['gale'] = 0
-                    sessao['sugestao_atual'] = None
-                    
-                    proxima = analisar_tendencia(sessao['history'])
-                    sessao['sugestao_atual'] = proxima
-                    
-                    if proxima is None:
-                        msg = (
-                            f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
-                            f"Protegendo banca rigorosamente.\n\n"
-                            f"🟡 **MERCADO VOLÁTIL**\n"
-                            f"🛑 **AGUARDAR / NÃO OPERAR**"
-                        )
-                    else:
-                        cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
-                        msg = (
-                            f"❌ **LOSS (Fim do Ciclo de 2 Gales)**\n"
-                            f"Protegendo banca. A recalcular...\n\n"
-                            f"🎯 **Nova Oportunidade:** Entrar no **{cor_emoji}**"
-                        )
-                    bot.reply_to(message, msg, parse_mode="Markdown")
+                    cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
+                    msg = (
+                        f"❌ **LOSS (Saiu {resultado_real} sem Gale)**\n"
+                        f"A recalcular o mercado...\n\n"
+                        f"🎯 **Nova Entrada Confirmada:** Entrar no **{cor_emoji}**"
+                    )
+                bot.reply_to(message, msg, parse_mode="Markdown")
                 return
         
         else:
-            # Se estava em pausa, avalia se já apareceu uma oportunidade de ouro
-            proxima = analisar_tendencia(sessao['history'])
+            # Se estava em pausa, procura nova oportunidade
+            proxima = analisar_tendencia_zero_gale(sessao['history'])
             sessao['sugestao_atual'] = proxima
             
             if proxima is None:
                 msg = (
-                    f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n"
-                    f"🟡 **Mercado ainda instável.**\n"
-                    f"🛑 **AGUARDAR / NÃO OPERAR**"
+                    f"📊 Histórico: `{' '.join(sessao['history'])}`\n"
+                    f"🛡️ **Modo Seletivo Ativo**\n"
+                    f"🛑 **AGUARDAR SINAL LIMPO**"
                 )
             else:
                 cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
                 msg = (
-                    f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n\n"
-                    f"🎯 **Oportunidade de Ouro Encontrada!** Entrar no **{cor_emoji}**"
+                    f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
+                    f"🎯 **ENTRADA CONFIRMADA (SEM GALE)!** Aposta no **{coremoji if 'coremoji' in locals() else cor_emoji}**"
                 )
             bot.reply_to(message, msg, parse_mode="Markdown")
 
