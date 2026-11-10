@@ -11,7 +11,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot de Bac Bo (Motor Nível Máximo + Polling) a funcionar 24/7!"
+    return "Bot de Bac Bo (Motor Nível Máximo + Gale Adaptativo) a funcionar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -30,7 +30,7 @@ def analisar_tendencia(historico):
     if len(puros) < 6:
         return None
     
-    # Filtro de Exaustão: Se a mesma cor se repetir 6+ vezes, o mercado está saturado -> Pausa para evitar inversão violenta
+    # Filtro de Exaustão: Se a mesma cor se repetir 6+ vezes, o mercado está saturado -> Pausa
     if len(puros) >= 6 and all(x == puros[-1] for x in puros[-6:]):
         return None
     
@@ -66,8 +66,9 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **Bot de Bac Bo - Nível Máximo Ativo!** 🏆🔥\n\n"
-        "Para calibrar o motor estatístico avançado, envia as **primeiras 7 jogadas**:\n"
+        "🤖 **Bot de Bac Bo - Gale Adaptativo Ativo!** 🏆🔥\n\n"
+        "O motor agora adapta-se se o sapato mudar a meio do ciclo.\n"
+        "Envia as **primeiras 7 jogadas** para calibrar:\n"
         "🔵 **A** para Azul\n"
         "🔴 **V** para Vermelho\n"
         "⚪ **T** para Empate\n\n"
@@ -130,19 +131,18 @@ def handle_message(message):
         
         if sugestao is None:
             resposta = (
-                f"✅ **Calibragem Máxima Concluída!**\n"
+                f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
-                f"🟡 **MERCADO VOLÁTIL / EXAURIDO**\n"
-                f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                f"O bot está em modo de proteção inteligente à espera de sinal limpo."
+                f"🟡 **MERCADO VOLÁTIL**\n"
+                f"🛑 **AGUARDAR / NÃO OPERAR**"
             )
         else:
             cor_emoji = "🔵 AZUL" if sugestao == 'A' else "🔴 VERMELHO"
             resposta = (
-                f"✅ **Calibragem Máxima Concluída!**\n"
+                f"✅ **Calibragem Concluída!**\n"
                 f"📊 Histórico: `{' '.join(sessao['history'])}`\n\n"
                 f"🎯 **Oportunidade de Ouro!** Entrar no **{cor_emoji}**\n"
-                f"🛡️ *Gestão de Risco:* Gales protegidos na mesma cor."
+                f"🛡️ *Gale Inteligente Ativo*"
             )
         bot.reply_to(message, resposta, parse_mode="Markdown")
         
@@ -163,7 +163,7 @@ def handle_message(message):
         if sessao['gale'] > 0 or sessao['sugestao_atual'] is not None:
             cor_em_curso = sessao['sugestao_atual']
             
-            # TRATAMENTO DE EMPATE (T): Devolve a aposta, mantém o nível de gale atual e repete
+            # TRATAMENTO DE EMPATE (T): Devolve a aposta, mantém o nível e repete
             if resultado_real == 'T':
                 cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
                 gale_atual = sessao['gale']
@@ -189,7 +189,7 @@ def handle_message(message):
                     msg = (
                         f"🎉 **GREEN / VITÓRIA!** 🟢\n"
                         f"Saiu: `{resultado_real}` | Histórico: `{' '.join(sessao['history'])}`\n\n"
-                        f"🟡 **MERCADO EM PAUSA (Filtro de Segurança)**\n"
+                        f"🟡 **MERCADO EM PAUSA**\n"
                         f"🛑 **AGUARDAR / NÃO OPERAR**"
                     )
                 else:
@@ -202,19 +202,37 @@ def handle_message(message):
                 bot.reply_to(message, msg, parse_mode="Markdown")
                 return
                 
-            # TRATAMENTO DE DERROTA (Red) -> Avança no Gale mantendo obrigatoriamente a cor
+            # TRATAMENTO DE DERROTA (Red) -> AQUI ESTÁ A MUDANÇA INTELIGENTE!
             else:
                 sessao['gale'] += 1
                 gale_atual = sessao['gale']
                 
                 if gale_atual <= 2:
-                    cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
+                    # RE-AVALIAÇÃO INTELIGENTE DO SAPATO PARA O GALE:
+                    # O motor verifica se o mercado mudou de estratégia neste preciso segundo
+                    nova_analise = analisar_tendencia(sessao['history'])
                     
-                    msg = (
-                        f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
-                        f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
-                        f"🎯 **Manter na mesma cor:** {cor_emoji}"
-                    )
+                    if nova_analise is not None and nova_analise != cor_em_curso:
+                        # Se o motor detetou que o mercado mudou, ADAPTA A COR DO GALE!
+                        sessao['sugestao_atual'] = nova_analise
+                        cor_em_curso = nova_analise
+                        cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
+                        
+                        msg = (
+                            f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
+                            f"🔄 **GALE {gale_atual} ADAPTATIVO 🛡️**\n"
+                            f"💡 *O motor detetou mudança de padrão no sapato!*\n\n"
+                            f"🎯 **Mudar direção para:** {cor_emoji}"
+                        )
+                    else:
+                        # Se o mercado continua na mesma linha ou sem sinal claro, mantém a cor original do Gale
+                        cor_emoji = "🔵 AZUL" if cor_em_curso == 'A' else "🔴 VERMELHO"
+                        msg = (
+                            f"⚠️ **RED na jogada anterior!** (Saiu {resultado_real})\n"
+                            f"🔄 A avançar para **GALE {gale_atual}** 🛡️\n\n"
+                            f"🎯 **Manter na mesma cor:** {cor_emoji}"
+                        )
+                    
                     bot.reply_to(message, msg, parse_mode="Markdown")
                 else:
                     # Loss total após 2 Gales
@@ -251,8 +269,7 @@ def handle_message(message):
                 msg = (
                     f"📊 Histórico atualizado: `{' '.join(sessao['history'])}`\n"
                     f"🟡 **Mercado ainda instável ou saturado.**\n"
-                    f"🛑 **AGUARDAR / NÃO OPERAR**\n"
-                    f"Continua a enviar os resultados."
+                    f"🛑 **AGUARDAR / NÃO OPERAR**"
                 )
             else:
                 cor_emoji = "🔵 AZUL" if proxima == 'A' else "🔴 VERMELHO"
