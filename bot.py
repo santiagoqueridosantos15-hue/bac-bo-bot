@@ -25,26 +25,21 @@ def motor_ultra_seletivo(historico):
     - Evita zonas de ruído e sapatos barulhentos para proteger a banca.
     """
     puros = [x for x in historico if x in ['A', 'V']]
-    if len(puros) < 10:  # Exige um histórico mínimo mais encorpado para analisar
+    if len(puros) < 10:  
         return None
     
-    # 1. Filtro de exaustão rigoroso (se repetir 5 vezes seguidas, não entra contra nem a favor do dragão cego)
     if len(puros) >= 5 and all(x == puros[-1] for x in puros[-5:]):
-        # Se for um dragão longo, só entra a favor se tivermos a certeza, senão pausa
         return None
 
-    # 2. TENDÊNCIA SÓLIDA DE CURTO PRAZO (Exige pelo menos 4 repetições alinhadas)
     if puros[-1] == puros[-2] == puros[-3] == puros[-4]:
         return puros[-1]
     
-    # 3. PING-PONG RIGOROSO (Alternância perfeita confirmada nas últimas 5 jogadas)
     if (puros[-1] != puros[-2] and 
         puros[-2] != puros[-3] and 
         puros[-3] != puros[-4] and 
         puros[-4] != puros[-5]):
         return 'V' if puros[-1] == 'A' else 'A'
 
-    # 4. DESVIO MATEMÁTICO SEVERO NAS ÚLTIMAS 8 JOGADAS (Só compensa se houver forte desproporção)
     ultimas_oito = puros[-8:]
     if ultimas_oito.count('A') >= 7:
         return 'V'
@@ -114,7 +109,7 @@ def handle_message(message):
         
     for resultado_real in novas_letras:
         sessao['history'].append(resultado_real)
-        if len(sessao['history']> 150):
+        if len(sessao['history']) > 150:
             sessao['history'] = sessao['history'][-150:]
             
         if sessao['cor_alvo'] is not None:
