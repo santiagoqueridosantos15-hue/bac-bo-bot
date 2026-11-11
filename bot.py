@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Master Elite Blindado' (Com Travão Anti-Bait) a operar 24/7!"
+    return "Bot Bac Bo 'Master Elite Blindado' (Reversão Pós-Quebra) a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -23,23 +23,25 @@ user_sessions = {}
 
 def motor_universal_blindado(historico):
     """
-    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (COM TRAVÃO ANTI-BAIT):
-    - Regra de Ouro: Trava e corta o sinal ao atingir 4 repetições de dragão (evita o bait da quebra na 5ª).
-    - Mantém o ping-pong, desvio padrão e restantes filtros intocados.
+    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (REVERSÃO PÓS-QUEBRA):
+    - Espera a quebra de um bloco de 3 e a confirmação com mais um da nova cor 
+      (ex: V-V-V-A-A) para disparar com segurança cirúrgica.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige um histórico encorpado mínimo para garantir estabilidade analítica
+    # Exige um histórico mínimo encorpado (mínimo 10 jogadas puras)
     if len(puros) < 10:
         return None
     
-    # --- TRAVÃO ANTI-BAIT (EVITAR O FIM DO DRAGÃO) ---
-    # Se uma cor já repetiu 4 vezes seguidas (ex: A-A-A-A), NÃO entramos na 5ª para não cair no engodo da casa!
-    if len(puros) >= 4 and puros[-1] == puros[-2] == puros[-3] == puros[-4]:
-        return None # Silêncio absoluto: recusa-se a entrar no esticanço do dragão
+    # --- REGRA DE OURO: CONFIRMAÇÃO DE REVERSÃO PÓS-QUEBRA ---
+    # Se fez 3 iguais, depois um de quebra e confirmou o segundo da nova cor (ex: V-V-V-A-A),
+    # o bot entra a favor da nova cor confirmada.
+    if len(puros) >= 5:
+        if puros[-5] == puros[-4] == puros[-3] and puros[-2] != puros[-5] and puros[-1] == puros[-2]:
+            return puros[-1]
 
-    # --- 1. TENDÊNCIA CONTROLADA DE SÉRIE (Até 3 repetições limpas) ---
-    if puros[-1] == puros[-2] == puros[-3]:
+    # --- 1. CONFIRMAÇÃO DE DRAGÃO ESTICADO (Entrada controlada na 5ª peça) ---
+    if len(puros) >= 4 and puros[-1] == puros[-2] == puros[-3] == puros[-4]:
         return puros[-1]
     
     # --- 2. PING-PONG PERFEITO (Alternância Cirúrgica) ---
@@ -59,9 +61,9 @@ def motor_universal_blindado(historico):
     total_a = ultimas_dez.count('A')
     total_v = ultimas_dez.count('V')
     
-    if total_a >= 8: # Desvio massivo de Azul -> Correção para Vermelho
+    if total_a >= 8: # Desvio massivo de Azul nas últimas 10 -> Correção para Vermelho
         return 'V'
-    elif total_v >= 8: # Desvio massivo de Vermelho -> Correção para Azul
+    elif total_v >= 8: # Desvio massivo de Vermelho nas últimas 10 -> Correção para Azul
         return 'A'
 
     return None
@@ -77,8 +79,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - MASTER ELITE BLINDADO (Com Travão Anti-Bait)** 🏆🔥💎\n\n"
-        "• *Travão anti-dragão cego ativado (corta na 4ª repetição)*\n"
+        "🤖 **BAC BO - MASTER ELITE BLINDADO (Reversão Pós-Quebra)** 🏆🔥💎\n\n"
+        "• *Confirmação dupla após quebra de blocos e dragões seguros*\n"
         "• *Gale controlado (G2 máximo) + Proteção obrigatória no Empate (T)*\n\n"
         "📜 **Envia o fluxo de resultados do sapato para começar (ex: `A V V T A A V A...`)!**"
     )
@@ -98,7 +100,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Anti-Bait):** 📈\n\n"
+        "📊 **Relatório de Desempenho (Anti-Bait Avançado):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -199,7 +201,7 @@ def handle_message(message):
         if sugestao is None:
             resposta = (
                 f"🛡️ **Mesa em Observação Rigorosa** ({len(sessao['history'])} rondas analisadas)\n"
-                f"🚫 *Mercado com ruído ou zona de dragão esticado detetada. Travão anti-bait ativo...*"
+                f"🚫 *A aguardar confirmação de padrão limpo ou reversão segura...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
