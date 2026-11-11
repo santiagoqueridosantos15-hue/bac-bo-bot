@@ -12,66 +12,46 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Master Elite Blindado' (Janela Macro 30 + G2) a operar 24/7!"
+    return "Bot Bac Bo 'Master Elite Dinâmico' (Pensamento Autónomo) a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
 
-# Base de dados em memória para gerir as sessões de múltiplos utilizadores em tempo real
+# Base de dados em memória para gerir as sessões em tempo real
 user_sessions = {}
 
-def motor_universal_blindado(historico):
+def motor_estatistico_autonomo(historico):
     """
-    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (JANELA MACRO DE 30 + G2):
-    - Analisa um horizonte alargado de até 30 resultados anteriores para leitura de sapato.
-    - Mantém o núcleo original de alta assertividade, tendências limpas, ping-pong e desvio padrão.
+    MOTOR ESTATÍSTICO AUTÓNOMO (SEM REGRAS FIXAS DE PADRÕES):
+    - O robô avalia de forma fluida a proporção do sapato.
+    - Se detetar um desvio estatístico relevante na janela ativa, atua de forma puramente matemática.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige um histórico mínimo encorpado (mínimo 10 jogadas puras para começar a disparar)
-    if len(puros) < 10:
+    # Exige um histórico mínimo saudável para começar a raciocinar
+    if len(puros) < 15:
         return None
     
-    # --- 1. TENDÊNCIA ESTÁVEL DE SÉRIE (Blocos limpos de 3) ---
-    if puros[-1] == puros[-2] == puros[-3]:
-        # Traväo de segurança para evitar esticar dragões excessivos (evita o bait da quebra na 5ª)
-        if len(puros) >= 4 and puros[-1] == puros[-2] == puros[-3] == puros[-4]:
-            return None 
-        return puros[-1]
+    # Analisa a janela macro ativa (últimas 30 rondas ou o histórico total disponível)
+    janela = puros[-30:]
+    total_jogadas = len(janela)
     
-    # --- 2. PING-PONG PERFEITO (Alternância Cirúrgica Legítima) ---
-    if (puros[-1] != puros[-2] and 
-        puros[-2] != puros[-3] and 
-        puros[-3] != puros[-4] and 
-        puros[-4] != puros[-5]):
-        return 'V' if puros[-1] == 'A' else 'A'
-
-    # --- 3. PING-PONG DUPLO / PADRÃO DE BLOCOS (A-A-V-V ou V-V-A-A) ---
-    if len(puros) >= 6:
-        if puros[-1] == puros[-2] and puros[-3] == puros[-4] and puros[-1] != puros[-3]:
-            return puros[-1]
-
-    # --- 4. DESVIO PADRÃO SEVERO / LEITURA MACRO (Baseado nas últimas 30 jogadas) ---
-    # Alargamos a janela de controlo para as últimas 30 para uma visão global perfeita do sapato
-    janela_macro = puros[-30:]
-    total_a = janela_macro.count('A')
-    total_v = janela_macro.count('V')
+    count_a = janela.count('A')
+    count_v = janela.count('V')
     
-    # Se o desvio global nas últimas 30 for massivo, corrige a tendência
-    if len(janela_macro) >= 15:
-        if total_a >= (len(janela_macro) * 0.7): # Desvio massivo de Azul -> Correção para Vermelho
-            return 'V'
-        elif total_v >= (len(janela_macro) * 0.7): # Desvio massivo de Vermelho -> Correção para Azul
-            return 'A'
-
-    # Fallback seguro para as últimas 10 se a macro estiver equilibrada
-    ultimas_dez = puros[-10:]
-    if ultimas_dez.count('A') >= 8:
-        return 'V'
-    elif ultimas_dez.count('V') >= 8:
-        return 'A'
-
+    perc_a = count_a / total_jogadas
+    perc_v = count_v / total_jogadas
+    
+    # O robô "pensa" por si: se uma cor estiver a monopolizar fortemente o sapato (> 65%),
+    # a probabilidade matemática natural dita uma correção para o lado oposto.
+    if perc_a >= 0.65:
+        return 'V' # Excesso de Azul -> Puxa Vermelho
+    elif perc_v >= 0.65:
+        return 'A' # Excesso de Vermelho -> Puxa Azul
+        
+    # Se o sapato estiver equilibrado e sem desvios lógicos, o robô fica em silêncio 
+    # para não inventar jogadas em zonas de ruído/baits.
     return None
 
 @bot.message_handler(commands=['start'])
@@ -85,10 +65,10 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - MASTER ELITE BLINDADO (Macro 30 + G2)** 🏆🔥💎\n\n"
-        "• *Leitura profunda de sapato (janela alargada de 30 rondas)*\n"
+        "🤖 **BAC BO - MASTER ELITE DINÂMICO (Motor Autónomo)** 🏆🔥💎\n\n"
+        "• *Sem regras rígidas de padrões: o robô lê o equilíbrio matemático real*\n"
         "• *Gale controlado (até G2) + Proteção obrigatória no Empate (T)*\n\n"
-        "📜 **Envia o fluxo de resultados do sapato para começar (ex: `A V V T A A V A...`)!**"
+        "📜 **Envia blocos de resultados (ex: envia um lote de 30 letras `A V V T A A V A...`) para o robô calcular o sapato!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -106,7 +86,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Master Elite):** 📈\n\n"
+        "📊 **Relatório de Desempenho (Autónomo):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -149,7 +129,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. A aguardar nova oportunidade cirúrgica...", 
+                    f"Aposta principal devolvida pela mesa. A aguardar nova análise...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -161,7 +141,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` com precisão matemática absoluta!", 
+                    f"Saiu `{resultado_real}` com leitura estatística autónoma perfeita!", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -196,26 +176,26 @@ def handle_message(message):
                     bot.reply_to(
                         message, 
                         f"❌ **LOSS FINAL (Ciclo G2 Esgotado - Saiu {resultado_real})**\n"
-                        f"🛑 Silêncio total no canal. A proteger rigorosamente a banca contra sapatos atípicos...", 
+                        f"🛑 Silêncio total no canal. A proteger a banca...", 
                         parse_mode="Markdown"
                     )
                     continue
 
     if sessao['cor_alvo'] is None:
-        sugestao = motor_universal_blindado(sessao['history'])
+        sugestao = motor_estatistico_autonomo(sessao['history'])
         
         if sugestao is None:
             resposta = (
-                f"🛡️ **Mesa em Observação Rigorosa** ({len(sessao['history'])} rondas analisadas)\n"
-                f"🚫 *A aguardar padrão limpo na leitura macro de sapato...*"
+                f"🛡️ **Mesa Equilibrada / Em Análise** ({len(sessao['history'])} rondas registadas)\n"
+                f"🚫 *Sem desvios estatísticos forçados. O robô está a pensar livremente...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🎲 **DADOS MASTER ELITE (MACRO 30)** 🎲\n"
-                f"🎯 **OPORTUNIDADE SEGURA ENCONTRADA!**\n"
+                f"🎲 **DADOS DO MOTOR AUTÓNOMO** 🎲\n"
+                f"🎯 **DESVIO DE SAPATO DETETADO!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
             
