@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Master Elite Blindado' (Motor Universal Definitivo) a operar 24/7!"
+    return "Bot Bac Bo 'Master Elite Blindado' (Com Travão Anti-Bait) a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -23,13 +23,9 @@ user_sessions = {}
 
 def motor_universal_blindado(historico):
     """
-    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (BAC BO PRO):
-    Cruza em simultâneo todas as escolas de análise existentes:
-    - Inércia de Dragão e Séries de Repetição
-    - Ping-Pong Simples e Duplo (Alternância Direcional)
-    - Desvio Padrão e Frequência Global de Sapato
-    - Limites de Exaustão e Quebra de Saturação Extrema
-    - Filtro Anti-Ruído e Entropia Caótica
+    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (COM TRAVÃO ANTI-BAIT):
+    - Regra de Ouro: Trava e corta o sinal ao atingir 4 repetições de dragão (evita o bait da quebra na 5ª).
+    - Mantém o ping-pong, desvio padrão e restantes filtros intocados.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
@@ -37,45 +33,37 @@ def motor_universal_blindado(historico):
     if len(puros) < 10:
         return None
     
-    # --- 1. FILTRO DE EXAUSTÃO EXTREMA (Quebra de Dragão) ---
-    # Se uma cor repetir 7 vezes seguidas, o mercado está no limite máximo de saturação e tende à reversão.
-    if len(puros) >= 7 and all(x == puros[-1] for x in puros[-7:]):
-        return 'V' if puros[-1] == 'A' else 'A'
+    # --- TRAVÃO ANTI-BAIT (EVITAR O FIM DO DRAGÃO) ---
+    # Se uma cor já repetiu 4 vezes seguidas (ex: A-A-A-A), NÃO entramos na 5ª para não cair no engodo da casa!
+    if len(puros) >= 4 and puros[-1] == puros[-2] == puros[-3] == puros[-4]:
+        return None # Silêncio absoluto: recusa-se a entrar no esticanço do dragão
 
-    # --- 2. TENDÊNCIA DE SÉRIE / DRAGÃO FORTE ---
-    # Se os últimos 4 resultados forem rigorosamente idênticos, a inércia do mercado está ativa.
-    if puros[-1] == puros[-2] == puros[-3] == puros[-4]:
+    # --- 1. TENDÊNCIA CONTROLADA DE SÉRIE (Até 3 repetições limpas) ---
+    if puros[-1] == puros[-2] == puros[-3]:
         return puros[-1]
     
-    # --- 3. PING-PONG PERFEITO (Alternância Cirúrgica) ---
-    # Valida alternância estrita nas últimas 5 jogadas sem falhas de ruído.
+    # --- 2. PING-PONG PERFEITO (Alternância Cirúrgica) ---
     if (puros[-1] != puros[-2] and 
         puros[-2] != puros[-3] and 
         puros[-3] != puros[-4] and 
         puros[-4] != puros[-5]):
         return 'V' if puros[-1] == 'A' else 'A'
 
-    # --- 4. PING-PONG DUPLO / PADRÃO DE BLOCOS (A-A-V-V ou V-V-A-A) ---
+    # --- 3. PING-PONG DUPLO / PADRÃO DE BLOCOS (A-A-V-V ou V-V-A-A) ---
     if len(puros) >= 6:
         if puros[-1] == puros[-2] and puros[-3] == puros[-4] and puros[-1] != puros[-3]:
-            return puros[-1] # Segue o padrão de repetição do bloco duplo
+            return puros[-1]
 
-    # --- 5. DESVIO PADRÃO SEVERO / EQUILÍBRIO DE SAPATO ---
-    # Analisa as últimas 12 jogadas puras à procura de desproporção matemática flagrante.
-    ultimas_doze = puros[-12:]
-    total_a = ultimas_doze.count('A')
-    total_v = ultimas_doze.count('V')
+    # --- 4. DESVIO PADRÃO SEVERO / EQUILÍBRIO DE SAPATO ---
+    ultimas_dez = puros[-10:]
+    total_a = ultimas_dez.count('A')
+    total_v = ultimas_dez.count('V')
     
-    if total_a >= 9: # Desvio massivo de Azul -> O mercado tende a corrigir para Vermelho
+    if total_a >= 8: # Desvio massivo de Azul -> Correção para Vermelho
         return 'V'
-    elif total_v >= 9: # Desvio massivo de Vermelho -> O mercado tende a corrigir para Azul
+    elif total_v >= 8: # Desvio massivo de Vermelho -> Correção para Azul
         return 'A'
 
-    # --- 6. TENDÊNCIA DE CURTO PRAZO (BLOCO DE 3) ---
-    if puros[-1] == puros[-2] == puros[-3]:
-        return puros[-1]
-
-    # Se o mercado estiver num padrão totalmente barulhento ou misto, retorna None (Pausa de Segurança)
     return None
 
 @bot.message_handler(commands=['start'])
@@ -89,11 +77,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - MASTER ELITE BLINDADO (Nível Máximo)** 🏆🔥💎\n\n"
-        "Motor universal ativado com todas as estratégias do planeta integradas:\n"
-        "• *Dragões, Séries e Ping-Pong (Simples e Duplo)*\n"
-        "• *Desvio Padrão e Exaustão Extrema*\n"
-        "• *Filtros anti-ruído contra mercados falsos*\n"
+        "🤖 **BAC BO - MASTER ELITE BLINDADO (Com Travão Anti-Bait)** 🏆🔥💎\n\n"
+        "• *Travão anti-dragão cego ativado (corta na 4ª repetição)*\n"
         "• *Gale controlado (G2 máximo) + Proteção obrigatória no Empate (T)*\n\n"
         "📜 **Envia o fluxo de resultados do sapato para começar (ex: `A V V T A A V A...`)!**"
     )
@@ -113,7 +98,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Master Elite Blindado):** 📈\n\n"
+        "📊 **Relatório de Desempenho (Anti-Bait):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -149,7 +134,6 @@ def handle_message(message):
         if sessao['cor_alvo'] is not None:
             cor_esperada = sessao['cor_alvo']
             
-            # TRATAMENTO DE EMPATE (T): Devolve a aposta principal, mantém o Gale atual e avisa
             if resultado_real == 'T':
                 sessao['stats']['wins'] += 1
                 sessao['cor_alvo'] = None
@@ -162,7 +146,6 @@ def handle_message(message):
                 )
                 continue
                 
-            # TRATAMENTO DE VITÓRIA (Green na cor certa)
             elif resultado_real == cor_esperada:
                 sessao['stats']['wins'] += 1
                 sessao['cor_alvo'] = None
@@ -175,7 +158,6 @@ def handle_message(message):
                 )
                 continue
                 
-            # TRATAMENTO DE DERROTA (Red) -> Gere o ciclo de Gale controlado (Até G2) com T obrigatório
             else:
                 if sessao['fase_gale'] == 0:
                     sessao['fase_gale'] = 1 
@@ -217,15 +199,15 @@ def handle_message(message):
         if sugestao is None:
             resposta = (
                 f"🛡️ **Mesa em Observação Rigorosa** ({len(sessao['history'])} rondas analisadas)\n"
-                f"🚫 *Mercado com ruído ou indefinição detetado. Filtro ativo a proteger a banca de entradas falsas...*"
+                f"🚫 *Mercado com ruído ou zona de dragão esticado detetada. Travão anti-bait ativo...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🎲 **DADOS MASTER ELITE BLINDADO** 🎲\n"
-                f"🎯 **OPORTUNIDADE ENCONTRADA!**\n"
+                f"🎲 **DADOS MASTER ELITE (ANTI-BAIT)** 🎲\n"
+                f"🎯 **OPORTUNIDADE SEGURA ENCONTRADA!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
             
