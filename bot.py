@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Master Elite Blindado' (Modo Defensivo Anti-Bait) a operar 24/7!"
+    return "Bot Bac Bo 'Master Elite Blindado' (Janela Macro 30 + G2) a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -23,29 +23,21 @@ user_sessions = {}
 
 def motor_universal_blindado(historico):
     """
-    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (VERSÃO MESTRE - LIMPO E DEFENSIVO):
-    - Mantém o núcleo original de alta assertividade (tendências, ping-pong e desvio padrão).
-    - Incorpora um filtro anti-ruído para ignorar zonas caóticas de baits.
+    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (JANELA MACRO DE 30 + G2):
+    - Analisa um horizonte alargado de até 30 resultados anteriores para leitura de sapato.
+    - Mantém o núcleo original de alta assertividade, tendências limpas, ping-pong e desvio padrão.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige um histórico mínimo encorpado (mínimo 10 jogadas puras)
+    # Exige um histórico mínimo encorpado (mínimo 10 jogadas puras para começar a disparar)
     if len(puros) < 10:
         return None
     
-    # --- FILTRO DEFENSIVO ANTI-BAIT (EVITAR ZONAS DE RUÍDO CAÓTICO) ---
-    # Se as últimas 4 jogadas estiverem numa alternância hiper-volátil sem sentido, bloqueia.
-    if len(puros) >= 4:
-        # Deteta se o mercado está em zigue-zague total e confuso que costuma armar rasteiras
-        if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
-            # Se além disso o histórico recente for instável, o motor silencia para proteger a banca.
-            pass # Deixa passar o ping-pong perfeito legítimo, mas filtra o ruído atípico abaixo.
-
     # --- 1. TENDÊNCIA ESTÁVEL DE SÉRIE (Blocos limpos de 3) ---
     if puros[-1] == puros[-2] == puros[-3]:
-        # Trava de segurança para não esticar o dragão indefinidamente para além da 4ª jogada
+        # Traväo de segurança para evitar esticar dragões excessivos (evita o bait da quebra na 5ª)
         if len(puros) >= 4 and puros[-1] == puros[-2] == puros[-3] == puros[-4]:
-            return None # Silêncio para evitar o bait da quebra do dragão
+            return None 
         return puros[-1]
     
     # --- 2. PING-PONG PERFEITO (Alternância Cirúrgica Legítima) ---
@@ -60,14 +52,24 @@ def motor_universal_blindado(historico):
         if puros[-1] == puros[-2] and puros[-3] == puros[-4] and puros[-1] != puros[-3]:
             return puros[-1]
 
-    # --- 4. DESVIO PADRÃO SEVERO / EQUILÍBRIO DE SAPATO (Baseado nas últimas 10) ---
-    ultimas_dez = puros[-10:]
-    total_a = ultimas_dez.count('A')
-    total_v = ultimas_dez.count('V')
+    # --- 4. DESVIO PADRÃO SEVERO / LEITURA MACRO (Baseado nas últimas 30 jogadas) ---
+    # Alargamos a janela de controlo para as últimas 30 para uma visão global perfeita do sapato
+    janela_macro = puros[-30:]
+    total_a = janela_macro.count('A')
+    total_v = janela_macro.count('V')
     
-    if total_a >= 8: # Desvio massivo de Azul nas últimas 10 -> Correção para Vermelho
+    # Se o desvio global nas últimas 30 for massivo, corrige a tendência
+    if len(janela_macro) >= 15:
+        if total_a >= (len(janela_macro) * 0.7): # Desvio massivo de Azul -> Correção para Vermelho
+            return 'V'
+        elif total_v >= (len(janela_macro) * 0.7): # Desvio massivo de Vermelho -> Correção para Azul
+            return 'A'
+
+    # Fallback seguro para as últimas 10 se a macro estiver equilibrada
+    ultimas_dez = puros[-10:]
+    if ultimas_dez.count('A') >= 8:
         return 'V'
-    elif total_v >= 8: # Desvio massivo de Vermelho nas últimas 10 -> Correção para Azul
+    elif ultimas_dez.count('V') >= 8:
         return 'A'
 
     return None
@@ -83,9 +85,9 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - MASTER ELITE BLINDADO (Modo Mestre)** 🏆🔥💎\n\n"
-        "• *Cérebro original restaurado com filtro inteligente anti-ruído/bait*\n"
-        "• *Gale controlado (G2 máximo) + Proteção obrigatória no Empate (T)*\n\n"
+        "🤖 **BAC BO - MASTER ELITE BLINDADO (Macro 30 + G2)** 🏆🔥💎\n\n"
+        "• *Leitura profunda de sapato (janela alargada de 30 rondas)*\n"
+        "• *Gale controlado (até G2) + Proteção obrigatória no Empate (T)*\n\n"
         "📜 **Envia o fluxo de resultados do sapato para começar (ex: `A V V T A A V A...`)!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
@@ -205,14 +207,14 @@ def handle_message(message):
         if sugestao is None:
             resposta = (
                 f"🛡️ **Mesa em Observação Rigorosa** ({len(sessao['history'])} rondas analisadas)\n"
-                f"🚫 *Mercado instável ou zona de ruído detetada. A aguardar sapato limpo...*"
+                f"🚫 *A aguardar padrão limpo na leitura macro de sapato...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🎲 **DADOS MASTER ELITE (BLINDADO)** 🎲\n"
+                f"🎲 **DADOS MASTER ELITE (MACRO 30)** 🎲\n"
                 f"🎯 **OPORTUNIDADE SEGURA ENCONTRADA!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
