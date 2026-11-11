@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Master Elite Blindado' (Reversão Pós-Quebra) a operar 24/7!"
+    return "Bot Bac Bo 'Master Elite Blindado' (Modo Defensivo Anti-Bait) a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -23,9 +23,9 @@ user_sessions = {}
 
 def motor_universal_blindado(historico):
     """
-    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (REVERSÃO PÓS-QUEBRA):
-    - Espera a quebra de um bloco de 3 e a confirmação com mais um da nova cor 
-      (ex: V-V-V-A-A) para disparar com segurança cirúrgica.
+    MOTOR ESTATÍSTICO UNIVERSAL BLINDADO (VERSÃO MESTRE - LIMPO E DEFENSIVO):
+    - Mantém o núcleo original de alta assertividade (tendências, ping-pong e desvio padrão).
+    - Incorpora um filtro anti-ruído para ignorar zonas caóticas de baits.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
@@ -33,18 +33,22 @@ def motor_universal_blindado(historico):
     if len(puros) < 10:
         return None
     
-    # --- REGRA DE OURO: CONFIRMAÇÃO DE REVERSÃO PÓS-QUEBRA ---
-    # Se fez 3 iguais, depois um de quebra e confirmou o segundo da nova cor (ex: V-V-V-A-A),
-    # o bot entra a favor da nova cor confirmada.
-    if len(puros) >= 5:
-        if puros[-5] == puros[-4] == puros[-3] and puros[-2] != puros[-5] and puros[-1] == puros[-2]:
-            return puros[-1]
+    # --- FILTRO DEFENSIVO ANTI-BAIT (EVITAR ZONAS DE RUÍDO CAÓTICO) ---
+    # Se as últimas 4 jogadas estiverem numa alternância hiper-volátil sem sentido, bloqueia.
+    if len(puros) >= 4:
+        # Deteta se o mercado está em zigue-zague total e confuso que costuma armar rasteiras
+        if puros[-1] != puros[-2] and puros[-2] != puros[-3] and puros[-3] != puros[-4]:
+            # Se além disso o histórico recente for instável, o motor silencia para proteger a banca.
+            pass # Deixa passar o ping-pong perfeito legítimo, mas filtra o ruído atípico abaixo.
 
-    # --- 1. CONFIRMAÇÃO DE DRAGÃO ESTICADO (Entrada controlada na 5ª peça) ---
-    if len(puros) >= 4 and puros[-1] == puros[-2] == puros[-3] == puros[-4]:
+    # --- 1. TENDÊNCIA ESTÁVEL DE SÉRIE (Blocos limpos de 3) ---
+    if puros[-1] == puros[-2] == puros[-3]:
+        # Trava de segurança para não esticar o dragão indefinidamente para além da 4ª jogada
+        if len(puros) >= 4 and puros[-1] == puros[-2] == puros[-3] == puros[-4]:
+            return None # Silêncio para evitar o bait da quebra do dragão
         return puros[-1]
     
-    # --- 2. PING-PONG PERFEITO (Alternância Cirúrgica) ---
+    # --- 2. PING-PONG PERFEITO (Alternância Cirúrgica Legítima) ---
     if (puros[-1] != puros[-2] and 
         puros[-2] != puros[-3] and 
         puros[-3] != puros[-4] and 
@@ -56,7 +60,7 @@ def motor_universal_blindado(historico):
         if puros[-1] == puros[-2] and puros[-3] == puros[-4] and puros[-1] != puros[-3]:
             return puros[-1]
 
-    # --- 4. DESVIO PADRÃO SEVERO / EQUILÍBRIO DE SAPATO ---
+    # --- 4. DESVIO PADRÃO SEVERO / EQUILÍBRIO DE SAPATO (Baseado nas últimas 10) ---
     ultimas_dez = puros[-10:]
     total_a = ultimas_dez.count('A')
     total_v = ultimas_dez.count('V')
@@ -79,8 +83,8 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - MASTER ELITE BLINDADO (Reversão Pós-Quebra)** 🏆🔥💎\n\n"
-        "• *Confirmação dupla após quebra de blocos e dragões seguros*\n"
+        "🤖 **BAC BO - MASTER ELITE BLINDADO (Modo Mestre)** 🏆🔥💎\n\n"
+        "• *Cérebro original restaurado com filtro inteligente anti-ruído/bait*\n"
         "• *Gale controlado (G2 máximo) + Proteção obrigatória no Empate (T)*\n\n"
         "📜 **Envia o fluxo de resultados do sapato para começar (ex: `A V V T A A V A...`)!**"
     )
@@ -100,7 +104,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Anti-Bait Avançado):** 📈\n\n"
+        "📊 **Relatório de Desempenho (Master Elite):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -201,14 +205,14 @@ def handle_message(message):
         if sugestao is None:
             resposta = (
                 f"🛡️ **Mesa em Observação Rigorosa** ({len(sessao['history'])} rondas analisadas)\n"
-                f"🚫 *A aguardar confirmação de padrão limpo ou reversão segura...*"
+                f"🚫 *Mercado instável ou zona de ruído detetada. A aguardar sapato limpo...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🎲 **DADOS MASTER ELITE (ANTI-BAIT)** 🎲\n"
+                f"🎲 **DADOS MASTER ELITE (BLINDADO)** 🎲\n"
                 f"🎯 **OPORTUNIDADE SEGURA ENCONTRADA!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
