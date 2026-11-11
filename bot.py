@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Master Professional' a operar 24/7!"
+    return "Bot Bac Bo 'Smart Brain 10 Rondas' a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -21,42 +21,39 @@ def run_web():
 # Base de dados em memória para gerir as sessões em tempo real
 user_sessions = {}
 
-def motor_profissional_autonomo(historico):
+def cerebro_janela_dez(historico):
     """
-    MOTOR PROFISSIONAL AUTÓNOMO:
-    - Analisa o histórico enviado (lê a macro e a micro do sapato).
-    - Tem lógica própria de raciocínio estatístico humano, sem ficar bloqueado em silêncios.
-    - Retorna sempre uma decisão clara ('A' ou 'V').
+    CÉREBRO INTELIGENTE (JANELA DE 10 RONDAS):
+    - Analisa estritamente as últimas 10 rondas puras enviadas.
+    - Avalia se há um padrão lógico de alternância ou desequilíbrio limpo.
+    - Se a mesa estiver num antro de ruído/baits, fica em silêncio (retorna None).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Se houver pouquíssimas jogadas, exige o mínimo de base
-    if len(puros) < 6:
-        return 'A' if len(puros) % 2 == 0 else 'V'
+    # Exige o bloco completo de 10 rondas para começar a raciocinar com precisão
+    if len(puros) < 10:
+        return None
+        
+    # Isola estritamente as últimas 10 rondas
+    dez_rondas = puros[-10:]
     
-    # Avaliação macro (últimas 30 ou o total disponível) e micro (últimas 6)
-    macro = puros[-30:]
-    micro = puros[-6:]
+    # 1. Verificar se há Ping-Pong limpo e ativo no final das 10
+    if dez_rondas[-1] != dez_rondas[-2] and dez_rondas[-2] != dez_rondas[-3] and dez_rondas[-3] != dez_rondas[-4]:
+        # Segue a lógica do ping-pong legítimo
+        return 'V' if dez_rondas[-1] == 'A' else 'A'
+        
+    # 2. Verificar desequilíbrio estatístico forte dentro destas 10 rondas
+    total_a = dez_rondas.count('A')
+    total_v = dez_rondas.count('V')
     
-    total_a_macro = macro.count('A')
-    total_v_macro = macro.count('V')
-    
-    # Raciocínio de Trader Profissional:
-    # 1. Se a micro recente estiver a desequilibrar fortemente para um lado, o profissional antecipa o ressalto/correção.
-    # 2. Se o balanço macro estiver inclinado, o motor acompanha a lógica natural do sapato.
-    last_val = micro[-1]
-    
-    if micro.count(last_val) >= 3:
-        # Se fez um pequeno bloco de 3, o profissional aposta na quebra ou no seguimento inteligente
-        # No Bac Bo, o raciocínio profissional equilibra o sapato:
-        return 'V' if last_val == 'A' else 'A'
-    
-    # Balanço geral das últimas rondas
-    if total_a_macro > total_v_macro:
-        # Sapato com mais Azul globalmente -> O motor equilibra puxando Vermelho ou seguindo se houver força
-        return 'V' if micro[-1] == 'A' else 'A'
-    else:
-        return 'A' if micro[-1] == 'V' else 'V'
+    # Se nas 10 rondas uma cor dominar fortemente (ex: 7 contra 3), o cérebro puxa a correção
+    if total_a >= 7:
+        return 'V'
+    elif total_v >= 7:
+        return 'A'
+        
+    # Se o cenário das 10 rondas estiver completamente misturado e sem lógica clara de tendência:
+    return None
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -69,10 +66,10 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - MASTER PROFESSIONAL (Modo Autónomo)** 🏆🔥💎\n\n"
-        "• *Cérebro profissional ativado: sem silêncios vazios, com raciocínio lógico*\n"
-        "• *Gale controlado (até G2) + Proteção obrigatória no Empate (T) em todos os sinais*\n\n"
-        "📜 **Envia o fluxo de resultados do sapato para o profissional analisar e dar a entrada!**"
+        "🤖 **BAC BO - SMART BRAIN (Janela 10 Rondas)** 🏆🔥💎\n\n"
+        "• *Análise inteligente focada estritamente nas últimas 10 rondas*\n"
+        "• *Gale controlado (até G2) + Proteção obrigatória no Empate (T)*\n\n"
+        "📜 **Envia blocos de 10 resultados para o cérebro analisar e decidir a entrada!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -90,7 +87,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Professional):** 📈\n\n"
+        "📊 **Relatório de Desempenho (10 Rondas):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -133,7 +130,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. A calcular o próximo passo profissional...", 
+                    f"Aposta principal devolvida pela mesa. A aguardar próximo bloco de 10...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -145,7 +142,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` com leitura analítica perfeita!", 
+                    f"Saiu `{resultado_real}` com leitura inteligente das 10 rondas!", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -180,25 +177,30 @@ def handle_message(message):
                     bot.reply_to(
                         message, 
                         f"❌ **LOSS FINAL (Ciclo G2 Esgotado - Saiu {resultado_real})**\n"
-                        f"🛑 Ciclo encerrado com gestão rigorosa de risco.", 
+                        f"🛑 Ciclo encerrado. Cérebro em pausa de proteção...", 
                         parse_mode="Markdown"
                     )
                     continue
 
-    # Se não houver alvo ativo, o motor profissional processa imediatamente o histórico e dá a entrada
     if sessao['cor_alvo'] is None:
-        sugestao = motor_profissional_autonomo(sessao['history'])
+        sugestao = cerebro_janela_dez(sessao['history'])
         
-        if sugestao is not None:
+        if sugestao is None:
+            resposta = (
+                f"🧠 **Smart Brain (Janela de 10 Rondas)**\n"
+                f"🛡️ *Mesa sem padrão limpo nas últimas 10. Em observação inteligente...*"
+            )
+        else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🎩 **ANÁLISE PROFISSIONAL MASTER** 🎲\n"
-                f"🎯 **DIRETRIZ CALCULADA!**\n"
+                f"🧠 **DIRETRIZ DAS 10 RONDAS** 🎲\n"
+                f"🎯 **OPORTUNIDADE LÓGICA VALIDADA!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
-            bot.reply_to(message, resposta, parse_mode="Markdown")
+            
+        bot.reply_to(message, resposta, parse_mode="Markdown")
 
 if __name__ == '__main__':
     t = Thread(target=run_web)
