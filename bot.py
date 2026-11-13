@@ -1,5 +1,5 @@
-import telebot
 import os
+import telebot
 from flask import Flask
 from threading import Thread
 
@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Pure Smart Brain' a operar 24/7!"
+    return "Bot Bac Bo 'Smart Brain 10 Rondas' a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -21,33 +21,34 @@ def run_web():
 # Base de dados em memória para gerir as sessões em tempo real
 user_sessions = {}
 
-def cerebro_puro_autonomo(historico):
+def cerebro_janela_dez(historico):
     """
-    CÉREBRO PURO AUTÓNOMO (SEM REGRAS DE PADRÕES):
-    - Lê estritamente as últimas 10 rondas fornecidas.
-    - Avalia o peso estatístico bruto (balanço de Azul vs Vermelho).
-    - Sem regras de ping-pong, sem regras de blocos: apenas raciocínio de equilíbrio do sapato.
+    CÉREBRO INTELIGENTE (JANELA DE 10 RONDAS):
+    - Analisa estritamente as últimas 10 rondas puras enviadas.
+    - Foco exclusivo no desequilíbrio estatístico forte (sem regras de ping-pong).
+    - Se a mesa estiver equilibrada ou sem tendência limpa, fica em silêncio (retorna None).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige estritamente as 10 rondas para calcular
+    # Exige o bloco completo de 10 rondas para começar a raciocinar com precisão
     if len(puros) < 10:
         return None
         
+    # Isola estritamente as últimas 10 rondas
     dez_rondas = puros[-10:]
+    
+    # Verificação de desequilíbrio estatístico forte dentro destas 10 rondas
     total_a = dez_rondas.count('A')
     total_v = dez_rondas.count('V')
     
-    # Raciocínio puramente autónomo baseado na saturação da janela de 10:
-    # Se o sapato nestas 10 rondas inclinou para um lado, o cérebro equilibra.
-    # Caso contrário, se estiver totalmente neutro (5 a 5), o cérebro lê a última tendência para dar continuidade inteligente.
-    if total_a > total_v:
-        return 'V' if total_a >= 7 else 'A'
-    elif total_v > total_a:
-        return 'A' if total_v >= 7 else 'V'
-    else:
-        # Se estiver exatamente empatado (5 a 5), segue o oposto da última ronda para quebrar o ciclo estagnado
-        return 'V' if dez_rondas[-1] == 'A' else 'A'
+    # Se nas 10 rondas uma cor dominar fortemente (ex: 7 contra 3), o cérebro puxa a correção
+    if total_a >= 7:
+        return 'V'
+    elif total_v >= 7:
+        return 'A'
+        
+    # Se o cenário das 10 rondas estiver misturado e sem tendência clara:
+    return None
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -60,10 +61,10 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - PURE SMART BRAIN (Autónomo Real)** 🏆🔥💎\n\n"
-        "• *Zero regras de padrões fixos: o cérebro pensa puramente pelo equilíbrio das 10 rondas*\n"
+        "🤖 **BAC BO - SMART BRAIN (Janela 10 Rondas)** 🏆🔥💎\n\n"
+        "• *Análise inteligente focada estritamente nas últimas 10 rondas*\n"
         "• *Gale controlado (até G2) + Proteção obrigatória no Empate (T)*\n\n"
-        "📜 **Envia o bloco de 10 rondas para o cérebro pensar e decidir a entrada!**"
+        "📜 **Envia blocos de 10 resultados para o cérebro analisar e decidir a entrada!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -81,7 +82,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Pure Brain):** 📈\n\n"
+        "📊 **Relatório de Desempenho (10 Rondas):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -124,7 +125,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. A aguardar novo bloco...", 
+                    f"Aposta principal devolvida pela mesa. A aguardar próximo bloco de 10...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -136,7 +137,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` com raciocínio autónomo perfeito!", 
+                    f"Saiu `{resultado_real}` com leitura inteligente das 10 rondas!", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -171,26 +172,26 @@ def handle_message(message):
                     bot.reply_to(
                         message, 
                         f"❌ **LOSS FINAL (Ciclo G2 Esgotado - Saiu {resultado_real})**\n"
-                        f"🛑 Ciclo encerrado com gestão rigorosa de banca.", 
+                        f"🛑 Ciclo encerrado. Cérebro em pausa de proteção...", 
                         parse_mode="Markdown"
                     )
                     continue
 
     if sessao['cor_alvo'] is None:
-        sugestao = cerebro_puro_autonomo(sessao['history'])
+        sugestao = cerebro_janela_dez(sessao['history'])
         
         if sugestao is None:
             resposta = (
-                f"🧠 **Pure Smart Brain (A aguardar dados)**\n"
-                f"🛡️ *Envia as últimas 10 rondas para o cérebro processar o equilíbrio autónomo...*"
+                f"🧠 **Smart Brain (Janela de 10 Rondas)**\n"
+                f"🛡️ *Mesa sem desequilíbrio limpo nas últimas 10. Em observação inteligente...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
-            cor_nome = "AZUL 🔵" filho = 'AZUL 🔵' if sugestao == 'A' else "VERMELHO 🔴"
+            cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🧠 **DIRETRIZ DO CÉREBRO AUTÓNOMO** 🎲\n"
-                f"🎯 **DECISÃO CALCULADA!**\n"
+                f"🧠 **DIRETRIZ DAS 10 RONDAS** 🎲\n"
+                f"🎯 **OPORTUNIDADE LÓGICA VALIDADA!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
             
