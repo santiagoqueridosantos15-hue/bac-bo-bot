@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Camaleon Adaptive Brain' a operar 24/7!"
+    return "Bot Bac Bo 'Smart Brain 10 Rondas (Até G1)' a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -21,51 +21,38 @@ def run_web():
 # Base de dados em memória para gerir as sessões em tempo real
 user_sessions = {}
 
-def cerebro_camaleao_adaptativo(historico):
+def cerebro_janela_dez(historico):
     """
-    CÉREBRO CAMALEÃO ADAPTATIVO (MÁXIMA INTELIGÊNCIA):
-    - Lê o comportamento estrutural da mesa em tempo real.
-    - Identifies se a mesa está em tendência pesada, alternância limpa ou caos.
-    - Se a mesa mudar de forma, o cérebro adapta a estratégia de raciocínio instantaneamente.
-    - Se o cenário for de ruído total, silencia (retorna None).
+    CÉREBRO INTELIGENTE (JANELA DE 10 RONDAS):
+    - Analisa estritamente as últimas 10 rondas puras enviadas.
+    - Avalia se há um padrão lógico de alternância ou desequilíbrio limpo.
+    - Se a mesa estiver num antro de ruído/baits, fica em silêncio (retorna None).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige uma amostra mínima de 10 rondas para começar a detetar a forma da mesa
+    # Exige o bloco completo de 10 rondas para começar a raciocinar com precisão
     if len(puros) < 10:
         return None
         
-    # Janela de análise dinâmica recente (últimas 12 rondas)
-    janela = puros[-12:]
+    # Isola estritamente as últimas 10 rondas
+    dez_rondas = puros[-10:]
     
-    total_a = janela.count('A')
-    total_v = janela.count('V')
+    # 1. Verificar se há Ping-Pong limpo e ativo no final das 10
+    if dez_rondas[-1] != dez_rondas[-2] and dez_rondas[-2] != dez_rondas[-3] and dez_rondas[-3] != dez_rondas[-4]:
+        # Segue a lógica do ping-pong legítimo
+        return 'V' if dez_rondas[-1] == 'A' else 'A'
+        
+    # 2. Verificar desequilíbrio estatístico forte dentro destas 10 rondas
+    total_a = dez_rondas.count('A')
+    total_v = dez_rondas.count('V')
     
-    # 1. ANÁLISE DE TENDÊNCIA / VANTAGEM FORTE (Mesa desequilibrada)
-    # Se uma cor estiver a dominar claramente a mesa (>70% da amostra recente)
-    if total_a >= 8:
-        return 'A'  # Continuidade da força dominante azul
-    elif total_v >= 8:
-        return 'V'  # Continuidade da força dominante vermelha
+    # Se nas 10 rondas uma cor dominar fortemente (ex: 7 contra 3), o cérebro puxa a correção
+    if total_a >= 7:
+        return 'V'
+    elif total_v >= 7:
+        return 'A'
         
-    # 2. ANÁLISE DE ALTERNÂNCIA LIMPA (Ping-pong estruturado na cauda)
-    # Se as últimas 4 rondas estiverem em alternância perfeita (ex: A V A V)
-    ultimas_4 = janela[-4:]
-    if (ultimas_4[0] != ultimas_4[1] and 
-        ultimas_4[1] != ultimas_4[2] and 
-        ultimas_4[2] != ultimas_4[3]):
-        # Adapta-se à alternância: inverte o último resultado
-        return 'V' if ultimas_4[-1] == 'A' else 'A'
-        
-    # 3. ANÁLISE DE EXAUSTÃO / REVERSÃO DE CICLO (Mesa esticada)
-    # Se a cauda imediata tiver uma sequência repetida de 3 iguais (ex: V V V), a mesa costuma quebrar
-    cauda_3 = janela[-3:]
-    if cauda_3[0] == cauda_3[1] == cauda_3[2]:
-        # O cérebro deteta que a mesa esticou e aplica a inversão inteligente
-        return 'V' if cauda_3[2] == 'A' else 'A'
-        
-    # 4. SILÊNCIO TÁTICO (Mesa baralhada / Caos / Sem padrão claro)
-    # Se a mesa estiver empatada em termos de força (ex: 6-6) e sem alternância limpa, o robô cala-se para não arriscar
+    # Se o cenário das 10 rondas estiver completamente misturado e sem lógica clara de tendência:
     return None
 
 @bot.message_handler(commands=['start'])
@@ -79,11 +66,10 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - CAMALEON ADAPTIVE BRAIN** 🏆🔥💎\n\n"
-        "• *Cérebro autónomo que estuda e adapta-se à forma da mesa em tempo real*\n"
-        "• *Gestão cirúrgica: Entrada + Máximo de 1 Gale (G1)*\n"
-        "• *Blindagem total e automática no Empate (T)*\n\n"
-        "📜 **Envia o fluxo de resultados para o Camaleão caçar as melhores oportunidades!**"
+        "🤖 **BAC BO - SMART BRAIN (Janela 10 Rondas / Até G1)** 🏆🔥💎\n\n"
+        "• *A estrutura vencedora ajustada para limite máximo de 1 Gale (G1)*\n"
+        "• *Proteção obrigatória no Empate (T)*\n\n"
+        "📜 **Envia blocos de resultados para o cérebro analisar e decidir a entrada!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -101,7 +87,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Camaleão Adaptativo):** 📈\n\n"
+        "📊 **Relatório de Desempenho (10 Rondas):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -131,8 +117,8 @@ def handle_message(message):
         
     for resultado_real in novas_letras:
         sessao['history'].append(resultado_real)
-        if len(sessao['history']) > 300:
-            sessao['history'] = sessao['history'][-300:]
+        if len(sessao['history']) > 250:
+            sessao['history'] = sessao['history'][-250:]
             
         if sessao['cor_alvo'] is not None:
             cor_esperada = sessao['cor_alvo']
@@ -144,7 +130,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. Camaleão a reanalisar a forma da mesa...", 
+                    f"Aposta principal devolvida pela mesa. A aguardar próximo bloco...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -156,13 +142,13 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` com leitura adaptativa perfeita!", 
+                    f"Saiu `{resultado_real}` com leitura inteligente das 10 rondas!", 
                     parse_mode="Markdown"
                 )
                 continue
                 
             else:
-                # Gestão rigorosa restrita estritamente a MÁXIMO DE 1 GALE (G1)
+                # GESTÃO ESTREITA TRAVADA EM MÁXIMO DE 1 GALE (G1)
                 if sessao['fase_gale'] == 0:
                     sessao['fase_gale'] = 1 
                     cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
@@ -175,33 +161,34 @@ def handle_message(message):
                     )
                     continue
                 else:
+                    # Se falhar o G1, encerra o ciclo de imediato para evitar as losses que estragam o score
                     sessao['stats']['losses'] += 1
                     sessao['cor_alvo'] = None
                     sessao['fase_gale'] = 0
                     bot.reply_to(
                         message, 
                         f"❌ **LOSS FINAL (Ciclo G1 Esgotado - Saiu {resultado_real})**\n"
-                        f"🛑 Limite atingido. Camaleão em silêncio à espera de nova tendência...", 
+                        f"🛑 Limite de Gale atingido. Cérebro em pausa defensiva...", 
                         parse_mode="Markdown"
                     )
                     continue
 
     if sessao['cor_alvo'] is None:
-        sugestao = cerebro_camaleao_adaptativo(sessao['history'])
+        sugestao = cerebro_janela_dez(sessao['history'])
         
         if sugestao is None:
             resposta = (
-                f"🧠 **Camaleon Adaptive Brain**\n"
-                f"🛡️ *Mesa instável ou em transição de forma. Cérebro em silêncio tático à espera de padrão limpo...*"
+                f"🧠 **Smart Brain (Janela de 10 Rondas)**\n"
+                f"🛡️ *Mesa sem padrão limpo nas últimas 10. Em observação inteligente...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
-            cor_texto = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
+            cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🧠 **ANÁLISE CAMALEÃO VALIDADA** 🎲\n"
-                f"🎯 **MESA LIDA COM SUCESSO!**\n"
-                f"👉 **Entrar no {cor_texto} + Proteger no T**"
+                f"🧠 **DIRETRIZ DAS 10 RONDAS** 🎲\n"
+                f"🎯 **OPORTUNIDADE LÓGICA VALIDADA!**\n"
+                f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
             
         bot.reply_to(message, resposta, parse_mode="Markdown")
