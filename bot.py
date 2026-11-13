@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Elite Sniper Brain' a operar 24/7!"
+    return "Bot Bac Bo 'Camaleon Adaptive Brain' a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -21,41 +21,51 @@ def run_web():
 # Base de dados em memória para gerir as sessões em tempo real
 user_sessions = {}
 
-def cerebro_elite_sniper(historico):
+def cerebro_camaleao_adaptativo(historico):
     """
-    CÉREBRO ELITE SNIPER (MATRIZ DE ASSIMETRIA):
-    - Avalia o comportamento estrutural do histórico recente.
-    - Exige uma janela limpa e um desequilíbrio estatístico matemático para disparar.
-    - Se a mesa estiver em transição caótica ou sem padrão de força, SILENCIA (retorna None).
+    CÉREBRO CAMALEÃO ADAPTATIVO (MÁXIMA INTELIGÊNCIA):
+    - Lê o comportamento estrutural da mesa em tempo real.
+    - Identifies se a mesa está em tendência pesada, alternância limpa ou caos.
+    - Se a mesa mudar de forma, o cérebro adapta a estratégia de raciocínio instantaneamente.
+    - Se o cenário for de ruído total, silencia (retorna None).
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige uma amostra consistente de 10 rondas puras para calcular o vetor de força
+    # Exige uma amostra mínima de 10 rondas para começar a detetar a forma da mesa
     if len(puros) < 10:
         return None
         
-    # Isola estritamente as últimas 10 rondas do fluxo ativo
-    bloco = puros[-10:]
+    # Janela de análise dinâmica recente (últimas 12 rondas)
+    janela = puros[-12:]
     
-    # Contagens absolutas
-    azuis = bloco.count('A')
-    vermelhos = bloco.count('V')
+    total_a = janela.count('A')
+    total_v = janela.count('V')
     
-    # 1. Regra de Assimetria de Bloco (Dominância de 70% ou mais numa cor nas últimas 10)
-    # Se uma cor esticar demasiado, o motor calcula a exaustão ou acompanha a inércia pesada.
-    if azuis >= 7:
-        return 'A'  # Força de inércia contínua a favor do bloco dominante
-    if vermelhos >= 7:
-        return 'V'  # Força de inércia contínua a favor do bloco dominante
+    # 1. ANÁLISE DE TENDÊNCIA / VANTAGEM FORTE (Mesa desequilibrada)
+    # Se uma cor estiver a dominar claramente a mesa (>70% da amostra recente)
+    if total_a >= 8:
+        return 'A'  # Continuidade da força dominante azul
+    elif total_v >= 8:
+        return 'V'  # Continuidade da força dominante vermelha
         
-    # 2. Regra de Reversão Estrutural por Cauda (Últimas 4 rondas em bloco fechado)
-    cauda_4 = bloco[-4:]
-    if all(x == 'A' for x in cauda_4):
-        return 'V'  # Quebra iminente de esticada longa de Azuis
-    if all(x == 'V' for x in cauda_4):
-        return 'A'  # Quebra iminente de esticada longa de Vermelhos
+    # 2. ANÁLISE DE ALTERNÂNCIA LIMPA (Ping-pong estruturado na cauda)
+    # Se as últimas 4 rondas estiverem em alternância perfeita (ex: A V A V)
+    ultimas_4 = janela[-4:]
+    if (ultimas_4[0] != ultimas_4[1] and 
+        ultimas_4[1] != ultimas_4[2] and 
+        ultimas_4[2] != ultimas_4[3]):
+        # Adapta-se à alternância: inverte o último resultado
+        return 'V' if ultimas_4[-1] == 'A' else 'A'
         
-    # 3. Se a mesa estiver equilibrada (ex: 5-5) ou sem padrão de força limpo: CALA-SE
+    # 3. ANÁLISE DE EXAUSTÃO / REVERSÃO DE CICLO (Mesa esticada)
+    # Se a cauda imediata tiver uma sequência repetida de 3 iguais (ex: V V V), a mesa costuma quebrar
+    cauda_3 = janela[-3:]
+    if cauda_3[0] == cauda_3[1] == cauda_3[2]:
+        # O cérebro deteta que a mesa esticou e aplica a inversão inteligente
+        return 'V' if cauda_3[2] == 'A' else 'A'
+        
+    # 4. SILÊNCIO TÁTICO (Mesa baralhada / Caos / Sem padrão claro)
+    # Se a mesa estiver empatada em termos de força (ex: 6-6) e sem alternância limpa, o robô cala-se para não arriscar
     return None
 
 @bot.message_handler(commands=['start'])
@@ -69,11 +79,11 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - ELITE SNIPER BRAIN (v5)** 🏆🔥💎\n\n"
-        "• *Motor de Assimetria Matemática & Filtro de Ruído Absoluto*\n"
-        "• *Gestão Cirúrgica: Entrada + Máximo de 1 Gale (G1)*\n"
-        "• *Blindagem total no Empate (T)*\n\n"
-        "📜 **Envia o fluxo de resultados para o Sniper caçar as entradas de alta precisão!**"
+        "🤖 **BAC BO - CAMALEON ADAPTIVE BRAIN** 🏆🔥💎\n\n"
+        "• *Cérebro autónomo que estuda e adapta-se à forma da mesa em tempo real*\n"
+        "• *Gestão cirúrgica: Entrada + Máximo de 1 Gale (G1)*\n"
+        "• *Blindagem total e automática no Empate (T)*\n\n"
+        "📜 **Envia o fluxo de resultados para o Camaleão caçar as melhores oportunidades!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -91,7 +101,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Elite Sniper):** 📈\n\n"
+        "📊 **Relatório de Desempenho (Camaleão Adaptativo):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -134,7 +144,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. Sniper em silêncio à procura de novo alvo...", 
+                    f"Aposta principal devolvida pela mesa. Camaleão a reanalisar a forma da mesa...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -146,13 +156,13 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` com precisão cirúrgica do Sniper!", 
+                    f"Saiu `{resultado_real}` com leitura adaptativa perfeita!", 
                     parse_mode="Markdown"
                 )
                 continue
                 
             else:
-                # Gestão estrita a MÁXIMO DE 1 GALE (G1)
+                # Gestão rigorosa restrita estritamente a MÁXIMO DE 1 GALE (G1)
                 if sessao['fase_gale'] == 0:
                     sessao['fase_gale'] = 1 
                     cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
@@ -171,27 +181,26 @@ def handle_message(message):
                     bot.reply_to(
                         message, 
                         f"❌ **LOSS FINAL (Ciclo G1 Esgotado - Saiu {resultado_real})**\n"
-                        f"🛑 Limite de risco atingido. Sniper em modo de defesa tática...", 
+                        f"🛑 Limite atingido. Camaleão em silêncio à espera de nova tendência...", 
                         parse_mode="Markdown"
                     )
                     continue
 
     if sessao['cor_alvo'] is None:
-        sugestao = cerebro_elite_sniper(sessao['history'])
+        sugestao = cerebro_camaleao_adaptativo(sessao['history'])
         
         if sugestao is None:
             resposta = (
-                f"🧠 **Elite Sniper Brain**\n"
-                f"🛡️ *Mesa sem assimetria matemática clara. Cérebro em silêncio tático absoluto...*"
+                f"🧠 **Camaleon Adaptive Brain**\n"
+                f"🛡️ *Mesa instável ou em transição de forma. Cérebro em silêncio tático à espera de padrão limpo...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
-            cor_nome = "AZUL 🔵" == 'AZUL 🔵' if sugestao == 'A' else "VERMELHO 🔴"
             cor_texto = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🧠 **ALVO VALIDADO PELO SNIPER** 🎯\n"
-                f"⚡ **CONVICÇÃO MATEMÁTICA ATIVADA!**\n"
+                f"🧠 **ANÁLISE CAMALEÃO VALIDADA** 🎲\n"
+                f"🎯 **MESA LIDA COM SUCESSO!**\n"
                 f"👉 **Entrar no {cor_texto} + Proteger no T**"
             )
             
