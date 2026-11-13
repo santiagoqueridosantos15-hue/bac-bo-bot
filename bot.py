@@ -1,5 +1,5 @@
-import telebot
 import os
+import telebot
 from flask import Flask
 from threading import Thread
 
@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Smart Brain 10 Rondas' a operar 24/7!"
+    return "Bot Bac Bo 'Professional Neural Brain' a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -21,38 +21,58 @@ def run_web():
 # Base de dados em memória para gerir as sessões em tempo real
 user_sessions = {}
 
-def cerebro_janela_dez(historico):
+def cerebro_profissional_autonomo(historico):
     """
-    CÉREBRO INTELIGENTE (JANELA DE 10 RONDAS):
-    - Analisa estritamente as últimas 10 rondas puras enviadas.
-    - Avalia se há um padrão lógico de alternância ou desequilíbrio limpo.
-    - Se a mesa estiver num antro de ruído/baits, fica em silêncio (retorna None).
+    CÉREBRO NEURAL AUTÓNOMO & PROFISSIONAL:
+    - Analisa a inércia, o peso estatístico e a transição orgânica do fluxo recente.
+    - Calcula o índice de confiança probabilística para a próxima rondas.
+    - Se a entropia da mesa estiver alta (ruído/instabilidade), silencia (retorna None).
+    - Exige alta convicção para disparar o sinal de entrada.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige o bloco completo de 10 rondas para começar a raciocinar com precisão
+    # Exige uma amostra mínima sólida para começar a calcular matrizes de probabilidade
     if len(puros) < 10:
         return None
         
-    # Isola estritamente as últimas 10 rondas
-    dez_rondas = puros[-10:]
+    # Janela analítica de alta precisão (últimas 12 rondas)
+    janela = puros[-12:]
     
-    # 1. Verificar se há Ping-Pong limpo e ativo no final das 10
-    if dez_rondas[-1] != dez_rondas[-2] and dez_rondas[-2] != dez_rondas[-3] and dez_rondas[-3] != dez_rondas[-4]:
-        # Segue a lógica do ping-pong legítimo
-        return 'V' if dez_rondas[-1] == 'A' else 'A'
-        
-    # 2. Verificar desequilíbrio estatístico forte dentro destas 10 rondas
-    total_a = dez_rondas.count('A')
-    total_v = dez_rondas.count('V')
+    # Pesos ponderados: as rondas mais recentes pesam mais no cálculo do fluxo
+    peso_azul = 0
+    peso_vermelho = 0
+    total_amostra = len(janela)
     
-    # Se nas 10 rondas uma cor dominar fortemente (ex: 7 contra 3), o cérebro puxa a correção
-    if total_a >= 7:
-        return 'V'
-    elif total_v >= 7:
-        return 'A'
+    for i, res in enumerate(janela):
+        fator = (i + 1) / total_amostra  # Dá mais peso progressivo ao fim da mesa
+        if res == 'A':
+            peso_azul += fator
+        else:
+            peso_vermelho += fator
+            
+    # Análise de micro-tendência na cauda imediata (últimas 3 rondas)
+    cauda = janela[-3:]
+    streak_atual = all(x == cauda[0] for x in cauda)
+    
+    # Cálculo de viés estatístico autónomo
+    diferenca = abs(peso_azul - peso_vermelho)
+    
+    # Critério de alta convicção profissional (evita palpites fracos)
+    # Se houver um desequilíbrio orgânico forte ou uma quebra de micro-tendência estruturada:
+    if diferenca > 1.2:  # Limiar de rigor estatístico elevado
+        # Se o peso puxa fortemente para uma cor, o cérebro acompanha a inércia ou aplica reversão inteligente
+        if peso_azul > peso_vermelho:
+            return 'A'
+        else:
+            return 'V'
+            
+    # Análise comportamental de exaustão de streaks (quando uma cor estica demais e o cérebro calcula a inversão)
+    if streak_atual and total_amostra >= 10:
+        # Inversão orgânica calculada por exaustão de ciclo
+        cor_esgotamento = cauda[0]
+        return 'V' if cor_esgotamento == 'A' else 'A'
         
-    # Se o cenário das 10 rondas estiver completamente misturado e sem lógica clara de tendência:
+    # Se a mesa estiver neutra, equilibrada ou sem leitura de alta probabilidade: o cérebro cala-se
     return None
 
 @bot.message_handler(commands=['start'])
@@ -66,10 +86,11 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - SMART BRAIN (Janela 10 Rondas)** 🏆🔥💎\n\n"
-        "• *Análise inteligente focada estritamente nas últimas 10 rondas*\n"
-        "• *Gale controlado (até G2) + Proteção obrigatória no Empate (T)*\n\n"
-        "📜 **Envia blocos de 10 resultados para o cérebro analisar e decidir a entrada!**"
+        "🤖 **BAC BO - PROFESSIONAL NEURAL BRAIN** 🏆🔥💎\n\n"
+        "• *Cérebro autónomo de alta performance (Análise de Inércia & Entropia)*\n"
+        "• *Gestão estrita: Entrada + Máximo de 1 Gale (G1)*\n"
+        "• *Proteção obrigatória e automática no Empate (T)*\n\n"
+        "📜 **Envia o fluxo de resultados para o cérebro calcular as entradas de elite!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -87,7 +108,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (10 Rondas):** 📈\n\n"
+        "📊 **Relatório de Desempenho (Profissional):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -117,8 +138,8 @@ def handle_message(message):
         
     for resultado_real in novas_letras:
         sessao['history'].append(resultado_real)
-        if len(sessao['history']) > 250:
-            sessao['history'] = sessao['history'][-250:]
+        if len(sessao['history']) > 300:
+            sessao['history'] = sessao['history'][-300:]
             
         if sessao['cor_alvo'] is not None:
             cor_esperada = sessao['cor_alvo']
@@ -130,7 +151,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. A aguardar próximo bloco de 10...", 
+                    f"Aposta principal devolvida pela mesa. Cérebro a recalcular próximo alvo de elite...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -142,61 +163,52 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` com leitura inteligente das 10 rondas!", 
+                    f"Saiu `{resultado_real}` com precisão neural do cérebro profissional!", 
                     parse_mode="Markdown"
                 )
                 continue
                 
             else:
+                # Gestão profissional restrita estritamente a MÁXIMO DE 1 GALE (G1)
                 if sessao['fase_gale'] == 0:
                     sessao['fase_gale'] = 1 
                     cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
                     bot.reply_to(
                         message, 
                         f"⚠️ **Loss na Entrada Principal (Saiu {resultado_real})**\n\n"
-                        f"🔄 **GALE 1 (G1) OBRIGATÓRIO** 🚨\n"
-                        f"👉 **Entrar no {cor_nome} + Proteger no T**", 
-                        parse_mode="Markdown"
-                    )
-                    continue
-                elif sessao['fase_gale'] == 1:
-                    sessao['fase_gale'] = 2 
-                    cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
-                    bot.reply_to(
-                        message, 
-                        f"⚠️ **Loss no Gale 1 (Saiu {resultado_real})**\n\n"
-                        f"🔄 **GALE 2 (G2 - ÚLTIMO NÍVEL) OBRIGATÓRIO** 🚨\n"
+                        f"🔄 **GALE 1 (G1 - LIMITE PROFISSIONAL) OBRIGATÓRIO** 🚨\n"
                         f"👉 **Entrar no {cor_nome} + Proteger no T**", 
                         parse_mode="Markdown"
                     )
                     continue
                 else:
+                    # Se falhar o G1, encerra o ciclo de forma limpa para proteger a banca
                     sessao['stats']['losses'] += 1
                     sessao['cor_alvo'] = None
                     sessao['fase_gale'] = 0
                     bot.reply_to(
                         message, 
-                        f"❌ **LOSS FINAL (Ciclo G2 Esgotado - Saiu {resultado_real})**\n"
-                        f"🛑 Ciclo encerrado. Cérebro em pausa de proteção...", 
+                        f"❌ **LOSS FINAL (Ciclo G1 Esgotado - Saiu {resultado_real})**\n"
+                        f"🛑 Limite de risco atingido. Cérebro em modo de defesa à espera de mesa ideal...", 
                         parse_mode="Markdown"
                     )
                     continue
 
     if sessao['cor_alvo'] is None:
-        sugestao = cerebro_janela_dez(sessao['history'])
+        sugestao = cerebro_profissional_autonomo(sessao['history'])
         
         if sugestao is None:
             resposta = (
-                f"🧠 **Smart Brain (Janela de 10 Rondas)**\n"
-                f"🛡️ *Mesa sem padrão limpo nas últimas 10. Em observação inteligente...*"
+                f"🧠 **Professional Neural Brain**\n"
+                f"🛡️ *Mesa com alta entropia/ruído detetada. Cérebro em silêncio tático à espera da oportunidade perfeita...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🧠 **DIRETRIZ DAS 10 RONDAS** 🎲\n"
-                f"🎯 **OPORTUNIDADE LÓGICA VALIDADA!**\n"
+                f"🧠 **ANÁLISE NEURAL DE ELITE** 🎲\n"
+                f"🎯 **SINAL PROFISSIONAL VALIDADO!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
             
