@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Smart Brain Autónomo' a operar 24/7!"
+    return "Bot Bac Bo 'Smart Brain 10 Rondas' a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -21,33 +21,42 @@ def run_web():
 # Base de dados em memória para gerir as sessões em tempo real
 user_sessions = {}
 
-def cerebro_autonomo_puro(historico):
+def cerebro_altamente_seletivo(historico):
     """
-    CÉREBRO AUTÓNOMO E DINÂMICO:
-    - O robô analisa o fluxo orgânico das rondas sem regras rígidas ou contagens cegas.
-    - Avalia o comportamento adaptativo imediato do histórico recente.
-    - Se a mesa estiver sem leitura clara ou instável, silencia (retorna None).
+    CÉREBRO ALTAMENTE SELETIVO E INTELIGENTE:
+    - Analisa a tendência real das últimas rondas sem disparar à toa.
+    - Se a mesa estiver instável ou sem padrão claro, CALA-SE (retorna None).
+    - Só dispara quando há um desequilíbrio forte ou uma sequência lógica sustentada.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige uma amostra mínima de 6 rondas para começar a raciocinar autonomamente
-    if len(puros) < 6:
+    # Exige pelo menos 8 rondas puras para começar a analisar o comportamento da mesa
+    if len(puros) < 8:
         return None
         
-    # Janela analítica dinâmica recente
-    janela = puros[-6:]
+    # Isola as últimas 8 rondas para análise de comportamento recente
+    amostra = puros[-8:]
     
-    # IA autónoma baseada no comportamento de transição e predominância fluida
-    ultimos_dois = janela[-2:]
+    # Contagem de predominância na amostra
+    total_a = amostra.count('A')
+    total_v = amostra.count('V')
     
-    # Se houver uma quebra ou repetição orgânica forte na cauda da mesa, o cérebro decide
-    # Lógica baseada em fluxo inteligente autónomo (sem padrões engessados)
-    if ultimos_dois[0] == ultimos_dois[1]:
-        # Tendência natural de continuidade de fluxo
-        return ultimos_dois[1]
-    else:
-        # Tendência de inversão orgânica de ciclo
-        return 'A' if ultimos_dois[1] == 'V' else 'V'
+    # 1. Filtro de Tendência Forte / Desequilíbrio (Ex: 6 ou mais da mesma cor numa janela de 8)
+    if total_a >= 6:
+        return 'A' # Segue a tendência forte de continuação
+    elif total_v >= 6:
+        return 'V'
+        
+    # 2. Filtro de Alternância Limpa (Ping-pong estruturado nas últimas 4 rondas)
+    ultimas_quatro = amostra[-4:]
+    if (ultimas_quatro[0] != ultimas_quatro[1] and 
+        ultimas_quatro[1] != ultimas_quatro[2] and 
+        ultimas_quatro[2] != ultimas_quatro[3]):
+        # Se está em alternância perfeita, o próximo inverte o último
+        return 'V' if ultimas_quatro[-1] == 'A' else 'A'
+        
+    # 3. Se a mesa estiver misturada (ex: 4-4 ou sem padrão limpo), o cérebro recusa-se a chutar
+    return None
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -60,11 +69,11 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - SMART BRAIN AUTÓNOMO (Até G1)** 🏆🔥💎\n\n"
-        "• *Cérebro autónomo a pensar organicamente por si mesmo*\n"
+        "🤖 **BAC BO - SMART BRAIN ULTRA SELETIVO** 🏆🔥💎\n\n"
+        "• *Cérebro inteligente: só entra quando a mesa tem leitura clara (zero palpites cegos)*\n"
         "• *Gestão rigorosa: Entrada + Máximo de 1 Gale (G1)*\n"
         "• *Proteção obrigatória no Empate (T)*\n\n"
-        "📜 **Envia o fluxo de resultados para o cérebro processar as entradas!**"
+        "📜 **Envia o fluxo de resultados para o cérebro caçar as melhores oportunidades!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -82,7 +91,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho (Autónomo / Até G1):** 📈\n\n"
+        "📊 **Relatório de Desempenho (Ultra Seletivo):** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -125,7 +134,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. A aguardar novo sinal autónomo...", 
+                    f"Aposta principal devolvida pela mesa. Em busca de nova oportunidade...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -137,13 +146,13 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` com raciocínio autónomo do cérebro!", 
+                    f"Saiu `{resultado_real}` com análise cirúrgica do cérebro!", 
                     parse_mode="Markdown"
                 )
                 continue
                 
             else:
-                # Gestão restrita a estritamente MÁXIMO DE 1 GALE (G1)
+                # Gestão estrita a máximo de 1 Gale (G1)
                 if sessao['fase_gale'] == 0:
                     sessao['fase_gale'] = 1 
                     cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
@@ -156,33 +165,32 @@ def handle_message(message):
                     )
                     continue
                 else:
-                    # Se falhar o G1, encerra o ciclo imediatamente (Loss final de G1)
                     sessao['stats']['losses'] += 1
                     sessao['cor_alvo'] = None
                     sessao['fase_gale'] = 0
                     bot.reply_to(
                         message, 
                         f"❌ **LOSS FINAL (Ciclo G1 Esgotado - Saiu {resultado_real})**\n"
-                        f"🛑 Limite de Gale atingido. Cérebro em pausa de proteção...", 
+                        f"🛑 Limite atingido. Cérebro à espera de mesa limpa...", 
                         parse_mode="Markdown"
                     )
                     continue
 
     if sessao['cor_alvo'] is None:
-        sugestao = cerebro_autonomo_puro(sessao['history'])
+        sugestao = cerebro_altamente_seletivo(sessao['history'])
         
         if sugestao is None:
             resposta = (
-                f"🧠 **Smart Brain Autónomo**\n"
-                f"🛡️ *Mesa em análise orgânica profunda. A aguardar fluxo ideal...*"
+                f"🧠 **Smart Brain Ultra Seletivo**\n"
+                f"🛡️ *Mesa sem padrão limpo ou muito misturada. Cérebro em silêncio à espera da melhor oportunidade...*"
             )
         else:
             sessao['cor_alvo'] = sugestao
             sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🧠 **ANÁLISE AUTÓNOMA DO CÉREBRO** 🎲\n"
-                f"🎯 **FLUXO DECIDIDO!**\n"
+                f"🧠 **ANÁLISE CIRÚRGICA DO CÉREBRO** 🎲\n"
+                f"🎯 **OPORTUNIDADE DE ALTA ASSERTIVIDADE VALIDADA!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
             
