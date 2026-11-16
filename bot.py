@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Smart Brain 10 Rondas (Profissional)' a operar 24/7!"
+    return "Bot Bac Bo 'Smart Brain Elite' a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -21,39 +21,45 @@ def run_web():
 # Base de dados em memória para gerir as sessões em tempo real por chat_id
 user_sessions = {}
 
-def cerebro_janela_dez(historico):
+def cerebro_elite_avancado(historico):
     """
-    CÉREBRO INTELIGENTE E RIGOROSO (JANELA DE 10 RONDAS):
-    - Analisa estritamente as últimas 10 rondas puras enviadas ('A' ou 'V').
-    - Filtra ruído e falsas inversões (não salta logo só porque houve uma troca isolada).
-    - Valida ping-pong legítimo e desequilíbrio estatístico profundo (>= 7 numa ponta).
-    - Se a mesa estiver instável ou em transição, retorna None (mantém o bot em silêncio de proteção).
+    CÉREBRO ELITE PROFISSIONAL (BAC BO):
+    - Analisa padrões complexos de exaustão e desequilíbrio estrutural em janelas profundas.
+    - Aplica filtros estritos anti-ruído para garantir alta assertividade.
+    - Retorna a cor alvo ('A' ou 'V') apenas quando o gatilho é de alta probabilidade, ou None para manter silêncio.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige o bloco completo de 10 rondas para garantir leitura estatística real
-    if len(puros) < 10:
+    # Exige histórico consistente para análise de alta precisão
+    if len(puros) < 15:
         return None
         
-    # Isola estritamente as últimas 10 rondas
-    dez_rondas = puros[-10:]
+    bloco_recente = puros[-8:]
+    bloco_profundo = puros[-15:]
     
-    # 1. Verificar se há Ping-Pong limpo e ativo no final das 10 (alternância consistente)
-    if dez_rondas[-1] != dez_rondas[-2] and dez_rondas[-2] != dez_rondas[-3] and dez_rondas[-3] != dez_rondas[-4]:
-        # Confirma se não é um falso ping-pong olhando para a consistência anterior
-        return 'V' if dez_rondas[-1] == 'A' else 'A'
-        
-    # 2. Verificar desequilíbrio estatístico forte dentro das 10 rondas (evita falsas trocas por uma única cor isolada)
-    total_a = dez_rondas.count('A')
-    total_v = dez_rondas.count('V')
-    
-    # Só dispara correção/continuidade se a dominância for real (>= 7 em 10 rondas)
-    if total_a >= 7:
+    # --- GATILHO 1: Exaustão Extrema de Tendência Unidirecional ---
+    # Se a mesa esticar excessivamente na mesma cor sem respiro, deteta o ponto exato de rutura estatística.
+    if all(x == 'A' for x in bloco_recente):
         return 'V'
-    elif total_v >= 7:
+    elif all(x == 'V' for x in bloco_recente):
         return 'A'
         
-    # Se a mesa estiver dividida (ex: 5-5 ou 6-4 sem padrão claro), o cérebro recusa-se a inventar entradas
+    # --- GATILHO 2: Desequilíbrio Estrutural Profundo (Lei das Médias) ---
+    # Se numa janela de 15 rondas uma cor sufocar a outra de forma anómala, o cérebro puxa a correção.
+    total_a = bloco_profundo.count('A')
+    total_v = bloco_profundo.count('V')
+    
+    if total_a >= 11:
+        return 'V'
+    elif total_v >= 11:
+        return 'A'
+        
+    # --- GATILHO 3: Padrão de Micro-Reversão Estruturada ---
+    # Identifica quebras de simetria em blocos de transição limpa nas últimas rondas
+    if bloco_recente[-1] != bloco_recente[-2] and bloco_recente[-2] != bloco_recente[-3] and bloco_recente[-3] != bloco_recente[-4] and bloco_recente[-4] != bloco_recente[-5] and bloco_recente[-5] != bloco_recente[-6]:
+        return 'V' if bloco_recente[-1] == 'A' else 'A'
+
+    # Se a mesa estiver em ruído ou sem condições técnicas de alta segurança:
     return None
 
 @bot.message_handler(commands=['start'])
@@ -67,11 +73,11 @@ def send_welcome(message):
     }
     
     texto = (
-        "🤖 **BAC BO - SMART BRAIN PROFISSIONAL (Zero Gales)** 🏆🔥💎\n\n"
-        "• *Análise inteligente com filtro anti-ruído nas 10 rondas*\n"
-        "• *Modo Ciclo Fechado: Dispara o sinal, aguarda o desfecho, valida e PÁRA para reanalisar.*\n"
+        "🤖 **BAC BO - SMART BRAIN ELITE (Zero Gales)** 🏆🔥💎\n\n"
+        "• *Motor de alta precisão: Exaustão, desequilíbrio e matriz avançada*\n"
+        "• *Modo Ciclo Fechado Absoluto: Dispara, aguarda o desfecho, valida e PÁRA obrigatoriamente.*\n"
         "• *Proteção obrigatória ativa no Empate (T)*\n\n"
-        "📜 **Envia os resultados da mesa (ex: A, V, T) para o cérebro operar com precisão cirúrgica!**"
+        "📜 **Envia os resultados da mesa (ex: A, V, T) para o cérebro operar com rigor profissional!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -89,7 +95,7 @@ def send_stats(message):
     win_rate = (wins / total * 100) if total > 0 else 0
     
     texto = (
-        "📊 **Relatório de Desempenho Profissional:** 📈\n\n"
+        "📊 **Relatório de Desempenho Elite:** 📈\n\n"
         f"🎉 **Wins (Acertos Totais):** `{wins}`\n"
         f"❌ **Losses (Erros Finais):** `{losses}`\n"
         f"🎯 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
@@ -122,7 +128,7 @@ def handle_message(message):
         if len(sessao['history']) > 300:
             sessao['history'] = sessao['history'][-300:]
             
-        # Se o bot emitiu um sinal e estamos à espera do desfecho desta ronda exata:
+        # Se o bot emitiu um sinal e está à espera do desfecho exato desta ronda:
         if sessao['aguardando_resultado'] and sessao['cor_alvo'] is not None:
             cor_esperada = sessao['cor_alvo']
             
@@ -133,7 +139,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. **Ciclo encerrado com sucesso.** A aguardar novas diretrizes do cérebro...", 
+                    f"Aposta principal devolvida pela mesa. **Ciclo encerrado.** Cérebro em pausa analítica...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -145,7 +151,7 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` na aposta direta. **Ciclo encerrado.** A reanalisar a mesa de forma inteligente...", 
+                    f"Saiu `{resultado_real}` na aposta direta. **Ciclo encerrado com sucesso.** A reanalisar o mercado...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -157,28 +163,27 @@ def handle_message(message):
                 bot.reply_to(
                     message, 
                     f"❌ **LOSS (Saiu {resultado_real})**\n"
-                    f"🛑 Operação encerrada sem gales. **Ciclo parado.** Cérebro em pausa de segurança a reavaliar o cenário...", 
+                    f"🛑 Operação encerrada sem gales. **Ciclo parado estritamente.** Cérebro em silêncio de segurança...", 
                     parse_mode="Markdown"
                 )
                 continue
 
-    # Se o bot NÃO está à espera de resultado (ou seja, acabou de fechar um ciclo anterior), 
-    # ele avalia se deve mandar um NOVO sinal ou ficar em silêncio.
+    # Se o bot NÃO está à espera de resultado, processa a inteligência de mercado
     if not sessao['aguardando_resultado']:
-        sugestao = cerebro_janela_dez(sessao['history'])
+        sugestao = cerebro_elite_avancado(sessao['history'])
         
         if sugestao is None:
-            # Mantém-se em silêncio ou informa que está em observação profunda
+            # Silêncio operacional absoluto (filtro anti-ruído ativo)
             pass
         else:
             sessao['cor_alvo'] = sugestao
-            sessao['aguardando_resultado'] = True  # BLOQUEIA novos sinais até este ser resolvido!
+            sessao['aguardando_resultado'] = True  # BLOQUEIA novos sinais até este estar concluído!
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
-                f"🧠 **DIRETRIZ PROFISSIONAL DAS 10 RONDAS** 🎲\n"
-                f"🎯 **PADRÃO LÓGICO VALIDADO COM FILTRO DE SEGURANÇA!**\n"
+                f"🧠 **DIRETRIZ DE ELITE - SMART BRAIN** 🎲\n"
+                f"🎯 **GATILHO DE ALTA PROBABILIDADE VALIDADO!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**\n\n"
-                f"🔒 *Modo de disparo único ativado: O bot está agora em pausa, aguardando o resultado para reanalisar.*"
+                f"🔒 *Modo de disparo único ativado: O bot está agora em pausa estrita até receber o resultado.*"
             )
             bot.reply_to(message, resposta, parse_mode="Markdown")
 
