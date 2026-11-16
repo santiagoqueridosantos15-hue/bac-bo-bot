@@ -12,7 +12,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Bac Bo 'Smart Brain 10 Rondas (Até G1)' a operar 24/7!"
+    return "Bot Bac Bo 'Smart Brain 10 Rondas' a operar 24/7!"
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -60,16 +60,15 @@ def send_welcome(message):
     chat_id = message.chat.id
     user_sessions[chat_id] = {
         'history': [],
-        'fase_gale': 0,
         'cor_alvo': None,
         'stats': {'wins': 0, 'losses': 0}
     }
     
     texto = (
-        "🤖 **BAC BO - SMART BRAIN (Janela 10 Rondas / Até G1)** 🏆🔥💎\n\n"
-        "• *A estrutura vencedora ajustada para limite máximo de 1 Gale (G1)*\n"
-        "• *Proteção obrigatória no Empate (T)*\n\n"
-        "📜 **Envia blocos de resultados para o cérebro analisar e decidir a entrada!**"
+        "🤖 **BAC BO - SMART BRAIN (Janela 10 Rondas)** 🏆🔥💎\n\n"
+        "• *Análise inteligente focada estritamente nas últimas 10 rondas*\n"
+        "• *Sem Gales (Apenas Entrada Direta) + Proteção obrigatória no Empate (T)*\n\n"
+        "📜 **Envia blocos de 10 resultados para o cérebro analisar e decidir a entrada!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -103,7 +102,6 @@ def handle_message(message):
     if chat_id not in user_sessions:
         user_sessions[chat_id] = {
             'history': [], 
-            'fase_gale': 0,
             'cor_alvo': None,
             'stats': {'wins': 0, 'losses': 0}
         }
@@ -126,11 +124,10 @@ def handle_message(message):
             if resultado_real == 'T':
                 sessao['stats']['wins'] += 1
                 sessao['cor_alvo'] = None
-                sessao['fase_gale'] = 0
                 bot.reply_to(
                     message, 
                     f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. A aguardar próximo bloco...", 
+                    f"Aposta principal devolvida pela mesa. A aguardar próximo bloco de 10...", 
                     parse_mode="Markdown"
                 )
                 continue
@@ -138,7 +135,6 @@ def handle_message(message):
             elif resultado_real == cor_esperada:
                 sessao['stats']['wins'] += 1
                 sessao['cor_alvo'] = None
-                sessao['fase_gale'] = 0
                 bot.reply_to(
                     message, 
                     f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
@@ -148,30 +144,15 @@ def handle_message(message):
                 continue
                 
             else:
-                # GESTÃO ESTREITA TRAVADA EM MÁXIMO DE 1 GALE (G1)
-                if sessao['fase_gale'] == 0:
-                    sessao['fase_gale'] = 1 
-                    cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
-                    bot.reply_to(
-                        message, 
-                        f"⚠️ **Loss na Entrada Principal (Saiu {resultado_real})**\n\n"
-                        f"🔄 **GALE 1 (G1 - LIMITE MÁXIMO) OBRIGATÓRIO** 🚨\n"
-                        f"👉 **Entrar no {cor_nome} + Proteger no T**", 
-                        parse_mode="Markdown"
-                    )
-                    continue
-                else:
-                    # Se falhar o G1, encerra o ciclo de imediato para evitar as losses que estragam o score
-                    sessao['stats']['losses'] += 1
-                    sessao['cor_alvo'] = None
-                    sessao['fase_gale'] = 0
-                    bot.reply_to(
-                        message, 
-                        f"❌ **LOSS FINAL (Ciclo G1 Esgotado - Saiu {resultado_real})**\n"
-                        f"🛑 Limite de Gale atingido. Cérebro em pausa defensiva...", 
-                        parse_mode="Markdown"
-                    )
-                    continue
+                sessao['stats']['losses'] += 1
+                sessao['cor_alvo'] = None
+                bot.reply_to(
+                    message, 
+                    f"❌ **LOSS (Saiu {resultado_real})**\n"
+                    f"🛑 Operação encerrada. Cérebro em pausa de proteção...", 
+                    parse_mode="Markdown"
+                )
+                continue
 
     if sessao['cor_alvo'] is None:
         sugestao = cerebro_janela_dez(sessao['history'])
@@ -183,7 +164,6 @@ def handle_message(message):
             )
         else:
             sessao['cor_alvo'] = sugestao
-            sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             resposta = (
                 f"🧠 **DIRETRIZ DAS 10 RONDAS** 🎲\n"
