@@ -24,13 +24,13 @@ user_sessions = {}
 def cerebro_elite_avancado(historico):
     """
     CÉREBRO ELITE PROFISSIONAL (BAC BO):
-    - Analisa padrões complexos de exaustão e desequilíbrio estrutural em janelas profundas.
+    - Analisa padrões de exaustão e desequilíbrio estrutural em janelas profundas.
     - Aplica filtros estritos anti-ruído para garantir alta assertividade.
-    - Retorna a cor alvo ('A' ou 'V') apenas quando o gatilho é de alta probabilidade, ou None para manter silêncio.
+    - Retorna a cor alvo ('A' ou 'V') apenas quando o gatilho é seguro, ou None para silêncio.
     """
     puros = [x for x in historico if x in ['A', 'V']]
     
-    # Exige histórico consistente para análise de alta precisão
+    # Exige histórico consistente para análise de alta precisão (mínimo 15 rondas)
     if len(puros) < 15:
         return None
         
@@ -38,14 +38,12 @@ def cerebro_elite_avancado(historico):
     bloco_profundo = puros[-15:]
     
     # --- GATILHO 1: Exaustão Extrema de Tendência Unidirecional ---
-    # Se a mesa esticar excessivamente na mesma cor sem respiro, deteta o ponto exato de rutura estatística.
     if all(x == 'A' for x in bloco_recente):
         return 'V'
     elif all(x == 'V' for x in bloco_recente):
         return 'A'
         
     # --- GATILHO 2: Desequilíbrio Estrutural Profundo (Lei das Médias) ---
-    # Se numa janela de 15 rondas uma cor sufocar a outra de forma anómala, o cérebro puxa a correção.
     total_a = bloco_profundo.count('A')
     total_v = bloco_profundo.count('V')
     
@@ -55,11 +53,10 @@ def cerebro_elite_avancado(historico):
         return 'A'
         
     # --- GATILHO 3: Padrão de Micro-Reversão Estruturada ---
-    # Identifica quebras de simetria em blocos de transição limpa nas últimas rondas
     if bloco_recente[-1] != bloco_recente[-2] and bloco_recente[-2] != bloco_recente[-3] and bloco_recente[-3] != bloco_recente[-4] and bloco_recente[-4] != bloco_recente[-5] and bloco_recente[-5] != bloco_recente[-6]:
         return 'V' if bloco_recente[-1] == 'A' else 'A'
 
-    # Se a mesa estiver em ruído ou sem condições técnicas de alta segurança:
+    # Se a mesa estiver em ruído total:
     return None
 
 @bot.message_handler(commands=['start'])
@@ -75,9 +72,9 @@ def send_welcome(message):
     texto = (
         "🤖 **BAC BO - SMART BRAIN ELITE (Zero Gales)** 🏆🔥💎\n\n"
         "• *Motor de alta precisão: Exaustão, desequilíbrio e matriz avançada*\n"
-        "• *Modo Ciclo Fechado Absoluto: Dispara, aguarda o desfecho, valida e PÁRA obrigatoriamente.*\n"
+        "• *Modo Ciclo Fechado: Dispara, aguarda o desfecho, valida e PÁRA obrigatoriamente.*\n"
         "• *Proteção obrigatória ativa no Empate (T)*\n\n"
-        "📜 **Envia os resultados da mesa (ex: A, V, T) para o cérebro operar com rigor profissional!**"
+        "📜 **Envia os resultados da mesa (ex: A, V, T) para o cérebro operar!**"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
@@ -123,12 +120,14 @@ def handle_message(message):
         bot.reply_to(message, "⚠️ Formato inválido. Envia apenas letras de resultado (`A`, `V` ou `T`).", parse_mode="Markdown")
         return
         
+    resumo_acoes = []
+    
     for resultado_real in novas_letras:
         sessao['history'].append(resultado_real)
         if len(sessao['history']) > 300:
             sessao['history'] = sessao['history'][-300:]
             
-        # Se o bot emitiu um sinal e está à espera do desfecho exato desta ronda:
+        # Se o bot estava à espera de resultado para fechar o ciclo:
         if sessao['aguardando_resultado'] and sessao['cor_alvo'] is not None:
             cor_esperada = sessao['cor_alvo']
             
@@ -136,56 +135,48 @@ def handle_message(message):
                 sessao['stats']['wins'] += 1
                 sessao['cor_alvo'] = None
                 sessao['aguardando_resultado'] = False
-                bot.reply_to(
-                    message, 
-                    f"🟢 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** 🟡\n"
-                    f"Aposta principal devolvida pela mesa. **Ciclo encerrado.** Cérebro em pausa analítica...", 
-                    parse_mode="Markdown"
-                )
-                continue
-                
+                resumo_acoes.append("🟢 **PROTEÇÃO NO EMPATE (T) COBERTA!** Aposta devolvida. Ciclo encerrado.")
             elif resultado_real == cor_esperada:
                 sessao['stats']['wins'] += 1
                 sessao['cor_alvo'] = None
                 sessao['aguardando_resultado'] = False
-                bot.reply_to(
-                    message, 
-                    f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` na aposta direta. **Ciclo encerrado com sucesso.** A reanalisar o mercado...", 
-                    parse_mode="Markdown"
-                )
-                continue
-                
+                resumo_acoes.append(f"🎉 **GREEN / VITÓRIA!** Saiu `{resultado_real}`. Ciclo encerrado com sucesso.")
             else:
                 sessao['stats']['losses'] += 1
                 sessao['cor_alvo'] = None
                 sessao['aguardando_resultado'] = False
-                bot.reply_to(
-                    message, 
-                    f"❌ **LOSS (Saiu {resultado_real})**\n"
-                    f"🛑 Operação encerrada sem gales. **Ciclo parado estritamente.** Cérebro em silêncio de segurança...", 
-                    parse_mode="Markdown"
-                )
-                continue
+                resumo_acoes.append(f"❌ **LOSS!** Saiu `{resultado_real}`. Ciclo encerrado sem gales. Cérebro em pausa.")
 
-    # Se o bot NÃO está à espera de resultado, processa a inteligência de mercado
+    # Se após processar as letras o bot NÃO estiver à espera de resultado, avalia se dá um novo sinal
+    sinal_gerado = None
     if not sessao['aguardando_resultado']:
         sugestao = cerebro_elite_avancado(sessao['history'])
-        
-        if sugestao is None:
-            # Silêncio operacional absoluto (filtro anti-ruído ativo)
-            pass
-        else:
+        if sugestao is not None:
             sessao['cor_alvo'] = sugestao
-            sessao['aguardando_resultado'] = True  # BLOQUEIA novos sinais até este estar concluído!
+            sessao['aguardando_resultado'] = True
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
-            resposta = (
+            sinal_gerado = (
                 f"🧠 **DIRETRIZ DE ELITE - SMART BRAIN** 🎲\n"
                 f"🎯 **GATILHO DE ALTA PROBABILIDADE VALIDADO!**\n"
                 f"👉 **Entrar no {cor_nome} + Proteger no T**\n\n"
-                f"🔒 *Modo de disparo único ativado: O bot está agora em pausa estrita até receber o resultado.*"
+                f"🔒 *Modo de disparo único ativado: Bot em pausa até receber o resultado.*"
             )
-            bot.reply_to(message, resposta, parse_mode="Markdown")
+
+    # Monta a resposta final para o utilizador saber sempre o que se passou
+    resposta_final = ""
+    if resumo_acoes:
+        resposta_final += "\n".join(resumo_acoes) + "\n\n"
+        
+    if sinal_gerado:
+        resposta_final += sinal_gerado
+    elif not sessao['aguardando_resultado']:
+        tamanho_hist = len([x for x in sessao['history'] if x in ['A', 'V']])
+        if tamanho_hist < 15:
+            resposta_final += f"🛡️ *A recolher histórico... ({tamanho_hist}/15 rondas limpas necessárias).* "
+        else:
+            resposta_final += "🛡️ *Mesa em observação inteligente (sem ruído ou gatilho seguro neste momento).* "
+
+    bot.reply_to(message, resposta_final.strip(), parse_mode="Markdown")
 
 if __name__ == '__main__':
     t = Thread(target=run_web)
