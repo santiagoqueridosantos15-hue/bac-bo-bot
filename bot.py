@@ -65,14 +65,14 @@ def send_welcome(message):
     user_sessions[chat_id] = {
         'history': [],
         'cor_alvo': None,
-        'aguardando_resultado': False,
+        'fase_gale': 0,
         'stats': {'wins': 0, 'losses': 0}
     }
     
     texto = (
-        "🤖 **BAC BO - SMART BRAIN ELITE (Zero Gales)** 🏆🔥💎\n\n"
+        "🤖 **BAC BO - SMART BRAIN ELITE (Gale 1)** 🏆🔥💎\n\n"
         "• *Motor de alta precisão: Exaustão, desequilíbrio e matriz avançada*\n"
-        "• *Modo Ciclo Fechado: Dispara, aguarda o desfecho, valida e PÁRA obrigatoriamente.*\n"
+        "• *Modo Gale 1: Permite 1 recuperação em caso de loss na entrada principal.*\n"
         "• *Proteção obrigatória ativa no Empate (T)*\n\n"
         "📜 **Envia os resultados da mesa (ex: A, V, T) para o cérebro operar!**"
     )
@@ -109,7 +109,7 @@ def handle_message(message):
         user_sessions[chat_id] = {
             'history': [], 
             'cor_alvo': None,
-            'aguardando_resultado': False,
+            'fase_gale': 0,
             'stats': {'wins': 0, 'losses': 0}
         }
     
@@ -128,48 +128,56 @@ def handle_message(message):
             sessao['history'] = sessao['history'][-300:]
             
         # Se o bot estava à espera de resultado para fechar o ciclo:
-        if sessao['aguardando_resultado'] and sessao['cor_alvo'] is not None:
+        if sessao['cor_alvo'] is not None:
             cor_esperada = sessao['cor_alvo']
             
             if resultado_real == 'T':
                 sessao['stats']['wins'] += 1
                 sessao['cor_alvo'] = None
-                sessao['aguardando_resultado'] = False
+                sessao['fase_gale'] = 0
                 resumo_acoes.append("🟢 **PROTEÇÃO NO EMPATE (T) COBERTA!** Aposta devolvida. Ciclo encerrado.")
             elif resultado_real == cor_esperada:
                 sessao['stats']['wins'] += 1
                 sessao['cor_alvo'] = None
-                sessao['aguardando_resultado'] = False
+                sessao['fase_gale'] = 0
                 resumo_acoes.append(f"🎉 **GREEN / VITÓRIA!** Saiu `{resultado_real}`. Ciclo encerrado com sucesso.")
             else:
-                sessao['stats']['losses'] += 1
-                sessao['cor_alvo'] = None
-                sessao['aguardando_resultado'] = False
-                resumo_acoes.append(f"❌ **LOSS!** Saiu `{resultado_real}`. Ciclo encerrado sem gales. Cérebro em pausa.")
+                if sessao['fase_gale'] == 0:
+                    sessao['fase_gale'] = 1
+                    cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
+                    resumo_acoes.append(
+                        f"⚠️ **Loss na Entrada Principal (Saiu {resultado_real})**\n\n"
+                        f"🔄 **GALE 1 (G1) OBRIGATÓRIO** 🚨\n"
+                        f"👉 **Entrar no {cor_nome} + Proteger no T**"
+                    )
+                else:
+                    sessao['stats']['losses'] += 1
+                    sessao['cor_alvo'] = None
+                    sessao['fase_gale'] = 0
+                    resumo_acoes.append(f"❌ **LOSS FINAL!** Saiu `{resultado_real}`. Ciclo G1 esgotado. Cérebro em pausa.")
 
     # Se após processar as letras o bot NÃO estiver à espera de resultado, avalia se dá um novo sinal
     sinal_gerado = None
-    if not sessao['aguardando_resultado']:
+    if sessao['cor_alvo'] is None:
         sugestao = cerebro_elite_avancado(sessao['history'])
         if sugestao is not None:
             sessao['cor_alvo'] = sugestao
-            sessao['aguardando_resultado'] = True
+            sessao['fase_gale'] = 0
             cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
             sinal_gerado = (
                 f"🧠 **DIRETRIZ DE ELITE - SMART BRAIN** 🎲\n"
                 f"🎯 **GATILHO DE ALTA PROBABILIDADE VALIDADO!**\n"
-                f"👉 **Entrar no {cor_nome} + Proteger no T**\n\n"
-                f"🔒 *Modo de disparo único ativado: Bot em pausa até receber o resultado.*"
+                f"👉 **Entrar no {cor_nome} + Proteger no T**"
             )
 
     # Monta a resposta final para o utilizador saber sempre o que se passou
     resposta_final = ""
     if resumo_acoes:
-        resposta_final += "\n".join(resumo_acoes) + "\n\n"
+        resposta_final += "\n\n".join(resumo_acoes) + "\n\n"
         
     if sinal_gerado:
         resposta_final += sinal_gerado
-    elif not sessao['aguardando_resultado']:
+    elif sessao['cor_alvo'] is None:
         tamanho_hist = len([x for x in sessao['history'] if x in ['A', 'V']])
         if tamanho_hist < 15:
             resposta_final += f"🛡️ *A recolher histórico... ({tamanho_hist}/15 rondas limpas necessárias).* "
