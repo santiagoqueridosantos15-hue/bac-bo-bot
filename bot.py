@@ -13,7 +13,7 @@ from flask import Flask
 
 TOKEN = os.getenv(
     "BOT_TOKEN",
-    "8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0"  # O teu token integrado, Zé!
+    "8922303337:AAGEcuzmV20slKZv5UjnQcFvBHMvq5UEXmQ"  # O teu token integrado, Zé!
 )
 
 if not TOKEN or TOKEN == "COLOCA_AQUI_O_TEU_TOKEN_NOVO":
