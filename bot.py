@@ -754,3 +754,11 @@ if __name__ == "__main__":
         timeout=20,
         long_polling_timeout=20
     )
+
+bot.remove_webhook()
+
+bot.infinity_polling(
+    skip_pending=True,
+    timeout=30,
+    long_polling_timeout=30
+)
