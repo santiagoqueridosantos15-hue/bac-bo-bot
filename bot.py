@@ -1,145 +1,222 @@
-import os
-from flask import Flask, request
 import telebot
+import os
+from flask import Flask
+from threading import Thread
 
-# --- AS TUA CONFIGURAÇÕES DIRETAS (SEM DESCULPAS) ---
-TOKEN = "AQUI_O_TEU_TOKEN_DO_BOTFATHER"
-RENDER_URL = "https://o-teu-servico.onrender.com"  # Ex: https://bot-bacbo.onrender.com (sem barra no fim)
-# ----------------------------------------------------
-
+# Configuração do Bot de Telegram (Com o teu token cravado, Zé!)
+TOKEN = '8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0'
 bot = telebot.TeleBot(TOKEN)
-server = Flask(__name__)
 
-# Estado Global da Sessão (Banca Inicial de 30€)
-banca_inicial = 30.0
-banca_atual = 30.0
-stats = {
-    "wins_cor": 0,
-    "wins_empate": 0,
-    "losses": 0,
-    "total_operacoes": 0
-}
+# Servidor Web integrado para manter o bot ativo 24/7 no Render
+app = Flask(__name__)
 
-# Histórico da mesa (guarda 'A', 'V', 'T')
-historico_mesa = []
+@app.route('/')
+def home():
+    return "Cérebro Cirúrgico 20/1 (Versão Completa e Blindada) a operar 24/7!"
 
-def cerebro_cirurgico_20_1(hist):
+def run_web():
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# Base de dados em memória para gerir as sessões em tempo real por chat
+user_sessions = {}
+
+def cerebro_cirurgico_20_1(historico):
     """
-    Cérebro de Alta Precisão (Foco: 20 Wins / Max 1 Loss).
-    Focado estritamente em exaustão extrema e desequilíbrios profundos.
+    CÉREBRO CIRÚRGICO DE ALTA PRECISÃO (Foco: 20 Wins / Máx 2 Losses):
+    - Analisa janelas profundas de 15 rondas puras.
+    - Foca-se estritamente em exaustões extremas e desequilíbrios profundos.
+    - Se houver ruído, o cérebro cala-se para proteger a banca.
     """
-    puros = [x for x in hist if x in ['A', 'V']]
-    if len(puros) < 20:
-        return f"⏳ A calibrar o Cérebro Cirúrgico... ({len(puros)}/20 rondas)."
-
-    # Gatilho de Exaustão Extrema (7 ou mais seguidos -> Inversão)
+    puros = [x for x in historico if x in ['A', 'V']]
+    
+    # Exige histórico consistente para abrir o gatilho cirúrgico
+    if len(puros) < 15:
+        return None
+        
+    # 1. Gatilho de Exaustão Extrema (Ex: 7 ou mais seguidos -> Inversão obrigatória)
     ultimos = puros[-7:]
     if all(x == ultimos[0] for x in ultimos):
         tendencia = ultimos[0]
-        sinal = 'V' if tendencia == 'A' else 'A'
-        nome_sinal = 'VERMELHO' if sinal == 'V' else 'AZUL'
-        return f"🔥 [ALTA PRECISÃO] EXAUSTÃO DETETADA ({len(ultimos)} seguidos)!\n👉 ENTRAR COM FORÇA EM: **{nome_sinal}** (3€/1€ + G1 6€/1€)"
-
-    # Gatilho de Desequilíbrio Estrutural (15+ numa cor em 20 rondas)
-    bloco = puros[-20:]
-    azuis = bloco.count('A')
-    vermelhos = bloco.count('V')
-
-    if azuis >= 15:
-        return "⚠️ [ALTA PRECISÃO] DESEQUILÍBRIO SEVERO! 15+ Azuis em 20 rondas.\n👉 ENTRAR NA COR OPOSTA: **VERMELHO (V)**"
-    elif vermelhos >= 15:
-        return "⚠️ [ALTA PRECISÃO] DESEQUILÍBRIO SEVERO! 15+ Vermelhos em 20 rondas.\n👉 ENTRAR NA COR OPOSTA: **AZUL (A)**"
-
-    return "🛡️ Mesa em zona de silêncio. Aguardar padrão limpo."
+        return 'V' if tendencia == 'A' else 'A'
+        
+    # 2. Desequilíbrio Estrutural Profundo nas últimas 15 rondas
+    bloco = puros[-15:]
+    total_a = bloco.count('A')
+    total_v = bloco.count('V')
+    
+    if total_a >= 12:
+        return 'V'
+    elif total_v >= 12:
+        return 'A'
+        
+    # Se a mesa estiver instável ou em ruído, o cérebro silencia
+    return None
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, 
-        "🤖 **Cérebro Cirúrgico (Objetivo 20/1) Ativo, Zé!**\n\n"
-        "Comandos disponíveis:\n"
-        "• Envia **A**, **V** ou **T** para alimentar o histórico.\n"
-        "• Envia /stats para ver o saldo, wins, empates e losses.\n"
-        "• Envia /reset para reiniciar a sessão.",
-        parse_mode="Markdown"
+    chat_id = message.chat.id
+    user_sessions[chat_id] = {
+        'history': [],
+        'fase_gale': 0,
+        'cor_alvo': None,
+        'stats': {
+            'wins_cor': 0,
+            'wins_empate': 0,
+            'losses': 0
+        }
+    }
+    
+    texto = (
+        "🤖 **BAC BO - CÉREBRO CIRÚRGICO (Objetivo 20/1)** 🏆🔥💎\n\n"
+        "• *Foco absoluto em exaustões e desequilíbrios profundos*\n"
+        "• *Suporte estrito até GALE 1 (G1) + Proteção obrigatória no Empate (T)*\n\n"
+        "📜 **Envia os resultados da mesa (`A`, `V` ou `T`) para o cérebro disparar os sinais!**"
     )
+    bot.reply_to(message, texto, parse_mode="Markdown")
 
 @bot.message_handler(commands=['stats'])
 def send_stats(message):
-    lucro_prejuizo = banca_atual - banca_inicial
-    sinal_lucro = "+" if lucro_prejuizo >= 0 else ""
+    chat_id = message.chat.id
+    if chat_id not in user_sessions:
+        bot.reply_to(message, "⚠️ Nenhuma sessão ativa detetada. Usa o comando `/start`.", parse_mode="Markdown")
+        return
+        
+    sessao = user_sessions[chat_id]
+    wins_c = sessao['stats']['wins_cor']
+    wins_e = sessao['stats']['wins_empate']
+    losses = sessao['stats']['losses']
+    total_wins = wins_c + wins_e
+    total_ops = total_wins + losses
+    win_rate = (total_wins / total_ops * 100) if total_ops > 0 else 0
     
     texto = (
-        f"📊 **ESTATÍSTICAS DA SESSÃO (FOCO 20/1)** 📊\n\n"
-        f"🟢 **Wins na Cor:** {stats['wins_cor']}\n"
-        f"🟡 **Wins de Empate (T):** {stats['wins_empate']}\n"
-        f"🔴 **Losses Finais (Após G1):** {stats['losses']}\n"
-        f"🎯 **Total de Operações:** {stats['total_operacoes']}\n\n"
-        f"💰 **Banca Inicial:** {banca_inicial:.2f}€\n"
-        f"💵 **Banca Atual:** {banca_atual:.2f}€\n"
-        f"📈 **Lucro/Prejuízo:** {sinal_lucro}{lucro_prejuizo:.2f}€"
+        "📊 **Relatório Cirúrgico (Objetivo 20/1):** 📈\n\n"
+        f"🟢 **Wins na Cor:** `{wins_c}`\n"
+        f"🟡 **Wins de Empate (T):** `{wins_e}`\n"
+        f"🔴 **Losses Finais (Após G1):** `{losses}`\n"
+        f"🎯 **Total de Operações:** `{total_ops}`\n"
+        f"📈 **Taxa de Assertividade:** `{win_rate:.2f}%`\n"
+        f"📜 Histórico Ativo: `{len(sessao['history'])} rondas`"
     )
     bot.reply_to(message, texto, parse_mode="Markdown")
 
 @bot.message_handler(commands=['reset'])
 def reset_session(message):
-    global banca_atual, historico_mesa, stats
-    banca_atual = banca_inicial
-    historico_mesa.clear()
-    stats = {"wins_cor": 0, "wins_empate": 0, "losses": 0, "total_operacoes": 0}
-    bot.reply_to(message, "🔄 Sessão reiniciada do zero! Histórico limpo.")
+    chat_id = message.chat.id
+    user_sessions[chat_id] = {
+        'history': [],
+        'fase_gale': 0,
+        'cor_alvo': None,
+        'stats': {'wins_cor': 0, 'wins_empate': 0, 'losses': 0}
+    }
+    bot.reply_to(message, "🔄 Sessão reiniciada do zero! Histórico limpo, Zé.", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
-def receber_jogada(message):
-    global banca_atual, stats
-    texto_msg = message.text.strip().upper()
+def handle_message(message):
+    chat_id = message.chat.id
+    texto_input = message.text.strip().upper()
     
-    if texto_msg == 'WIN':
-        stats['wins_cor'] += 1
-        stats['total_operacoes'] += 1
-        banca_atual += 1.0  # Lucro limpo do G1 na cor (+1€)
-        bot.reply_to(message, f"✅ Registado: **WIN**! Banca atual: {banca_atual:.2f}€", parse_mode="Markdown")
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = {
+            'history': [], 
+            'fase_gale': 0,
+            'cor_alvo': None,
+            'stats': {'wins_cor': 0, 'wins_empate': 0, 'losses': 0}
+        }
+    
+    sessao = user_sessions[chat_id]
+    
+    novas_letras = [char for char in texto_input if char in ['A', 'V', 'T']]
+    if not novas_letras:
+        bot.reply_to(message, "⚠️ Formato inválido. Envia apenas letras de resultado (`A`, `V` ou `T`).", parse_mode="Markdown")
         return
         
-    if texto_msg == 'LOSS':
-        stats['losses'] += 1
-        stats['total_operacoes'] += 1
-        banca_atual -= 11.0 # Prejuízo total do G1 falhado (-4€ principal + -7€ G1)
-        
-        aviso_alerta = f"❌ Registado: **LOSS TOTAL**! Banca atual: {banca_atual:.2f}€"
-        if stats['losses'] >= 2:
-            aviso_alerta += "\n\n🚨 **ATENÇÃO ZÉ! Atingiste o limite máximo de losses planeados! Cerra a mesa e respira!**"
+    for resultado_real in novas_letras:
+        sessao['history'].append(resultado_real)
+        if len(sessao['history']) > 300:
+            sessao['history'] = sessao['history'][-300:]
             
-        bot.reply_to(message, aviso_alerta, parse_mode="Markdown")
-        return
+        if sessao['cor_alvo'] is not None:
+            cor_esperada = sessao['cor_alvo']
+            
+            # Se sair Empate (T), conta logo como vitória do empate
+            if resultado_real == 'T':
+                sessao['stats']['wins_empate'] += 1
+                sessao['cor_alvo'] = None
+                sessao['fase_gale'] = 0
+                bot.reply_to(
+                    message, 
+                    f"🟡 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** (+3€)\n"
+                    f"Aposta principal devolvida pela mesa. A aguardar próximo gatilho...", 
+                    parse_mode="Markdown"
+                )
+                continue
+                
+            elif resultado_real == cor_esperada:
+                # Se acertou na Cor (seja na principal ou no G1)
+                sessao['stats']['wins_cor'] += 1
+                sessao['cor_alvo'] = None
+                sessao['fase_gale'] = 0
+                bot.reply_to(
+                    message, 
+                    f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
+                    f"Saiu `{resultado_real}` com o Cérebro Cirúrgico!", 
+                    parse_mode="Markdown"
+                )
+                continue
+                
+            else:
+                # Se errou, avalia o Gale
+                if sessao['fase_gale'] == 0:
+                    sessao['fase_gale'] = 1  # Passa para o Gale 1 (G1)
+                    cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
+                    bot.reply_to(
+                        message, 
+                        f"⚠️ **Loss na Entrada Principal (Saiu {resultado_real})**\n\n"
+                        f"🔄 **GALE 1 (G1) OBRIGATÓRIO (ÚLTIMO NÍVEL)** 🚨\n"
+                        f"👉 **Entrar no {cor_nome} (6€) + Proteger no T (1€)**", 
+                        parse_mode="Markdown"
+                    )
+                    continue
+                else:
+                    # Se falhou o G1, é Loss Final
+                    sessao['stats']['losses'] += 1
+                    sessao['cor_alvo'] = None
+                    sessao['fase_gale'] = 0
+                    
+                    aviso_loss = (
+                        f"❌ **LOSS FINAL (Gale 1 Falhado - Saiu {resultado_real})**\n"
+                        f"🛑 Ciclo encerrado. Cérebro em pausa de proteção."
+                    )
+                    if sessao['stats']['losses'] >= 2:
+                        aviso_loss += "\n\n🚨 **ATENÇÃO ZÉ! Atingiste o limite máximo de 2 losses! Cerra a mesa e respira!**"
+                        
+                    bot.reply_to(message, aviso_loss, parse_mode="Markdown")
+                    continue
 
-    for char in texto_msg:
-        if char in ['A', 'V', 'T']:
-            historico_mesa.append(char)
-            if char == 'T':
-                stats['wins_empate'] += 1
-                stats['total_operacoes'] += 1
-                banca_atual += 3.0 # Lucro limpo seguro do empate no G1
+    # Se não houver aposta ativa, procura novo gatilho cirúrgico
+    if sessao['cor_alvo'] is None:
+        sugestao = cerebro_cirurgico_20_1(sessao['history'])
+        
+        if sugestao is None:
+            resposta = (
+                f"🧠 **Cérebro Cirúrgico (Objetivo 20/1)**\n"
+                f"🛡️ *Mesa em zona de ruído. Sem exaustão ou desequilíbrio profundo. A aguardar...*"
+            )
+        else:
+            sessao['cor_alvo'] = sugestao
+            sessao['fase_gale'] = 0
+            cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
+            resposta = (
+                f"🧠 **DIRETRIZ CIRÚRGICA DE ALTA PRECISÃO** 🎲\n"
+                f"🎯 **PADRÃO VALIDADO!**\n"
+                f"👉 **Entrar na Principal: {cor_nome} (3€) + Proteger no T (1€)**"
+            )
+            
+        bot.reply_to(message, resposta, parse_mode="Markdown")
 
-    analise = cerebro_cirurgico_20_1(historico_mesa)
-    
-    resposta = (
-        f"📝 **Histórico atualizado** ({len(historico_mesa)} rondas registadas).\n\n"
-        f"{analise}"
-    )
-    bot.reply_to(message, resposta, parse_mode="Markdown")
-
-@server.route('/' + TOKEN, methods=['POST'])
-def getMessage():
-    json_string = request.get_data().decode('utf-8')
-    update = telebot.types.Update.de_json(json_string)
-    bot.process_new_updates([update])
-    return "!", 200
-
-@server.route("/")
-def index():
-    return "Cérebro Cirúrgico 20/1 Online e Operacional, Zé!", 200
-
-if __name__ == "__main__":
-    bot.remove_webhook()
-    bot.set_webhook(url=f"{RENDER_URL}/{TOKEN}")
-    server.run(host="0.0.0.0", port=int(os.getenv('PORT', 5000)))
+if __name__ == '__main__':
+    t = Thread(target=run_web)
+    t.start()
+    bot.infinity_polling()
