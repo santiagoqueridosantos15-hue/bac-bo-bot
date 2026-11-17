@@ -68,7 +68,7 @@ def nova_sessao():
         "gale": 0,
         "blocked": False,
 
-        # Previsão experimental pendente (guarda dict ou lista de previsões)
+        # Previsão experimental pendente
         "pending_paper": None,
 
         # Resultados globais da simulação em tempo real
@@ -102,7 +102,6 @@ def multi_strategy_brain(history):
     if len(history) < 20:
         return None
 
-    # Isolar apenas resultados puramente de cor
     puros = [x for x in history if x in ("A", "V")]
     if len(puros) < 20:
         return None
@@ -115,18 +114,8 @@ def multi_strategy_brain(history):
 
     # -------------------------------------------------
     # ESTRATÉGIA 1 — QUEBRA DE SEQUÊNCIA
-    # Deteta fim de sequência (ex: quebra de streak após 4+ repetidos)
     # -------------------------------------------------
-    streak = 1
-    for i in range(len(puros) - 1, 0, -1):
-        if puros[i] == puros[i - 1]:
-            streak += 1
-        else:
-            break
-
-    # Se a sequência terminou de quebrar na penúltima ronda e a última confirmou
     if len(puros) >= 3 and puros[-1] != puros[-2] and puros[-2] == puros[-3]:
-        # Confirmação de mudança detetada após streak anterior
         direcao_quebra = puros[-1]
         sinais.append({
             "color": direcao_quebra,
@@ -136,13 +125,11 @@ def multi_strategy_brain(history):
 
     # -------------------------------------------------
     # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG)
-    # Deteta padrões A-V-A-V ou V-A-V-A regulares nas últimas 4+ rondas
     # -------------------------------------------------
     if len(puros) >= 4:
         if (puros[-1] != puros[-2] and 
             puros[-2] != puros[-3] and 
             puros[-3] != puros[-4]):
-            # Padrão de alternância ativo; prever a continuação da alternância
             direcao_alt = "V" if puros[-1] == "A" else "A"
             sinais.append({
                 "color": direcao_alt,
@@ -152,12 +139,7 @@ def multi_strategy_brain(history):
 
     # -------------------------------------------------
     # ESTRATÉGIA 3 — MAIORIA RECENTE (Filtro de Contexto)
-    # Analisa desequilíbrios nas janelas de 5, 10 e 20 rondas
     # -------------------------------------------------
-    maioria_5 = max(set(ultimos_5), key=ultimos_5.count)
-    maioria_10 = max(set(ultimos_10), key=ultimos_10.count)
-    
-    # Contexto de forte desequilíbrio (ex: >= 7 em 10)
     cnt_a_10 = ultimos_10.count("A")
     cnt_v_10 = ultimos_10.count("V")
     contexto_forte = None
@@ -168,12 +150,10 @@ def multi_strategy_brain(history):
 
     # -------------------------------------------------
     # ESTRATÉGIA 4 — REVERSÃO APÓS DESEQUILÍBRIO
-    # Exige concentração invulgar e sinal de reversão/confirmação
     # -------------------------------------------------
     cnt_a_20 = ultimos_20.count("A")
     cnt_v_20 = ultimos_20.count("V")
 
-    # Concentração extrema (ex: >= 14 de uma cor em 20 rondas) com sinal de inversão recente
     if cnt_a_20 >= 14 and puros[-1] == "V" and puros[-2] == "V":
         sinais.append({
             "color": "V",
@@ -189,24 +169,18 @@ def multi_strategy_brain(history):
 
     # =================================================
     # SISTEMA DE DECISÃO E CONCORDÂNCIA
-    # Exige pelo menos duas confirmações direcionais independentes
     # =================================================
     if not sinais:
         return None
 
-    # Mapear direções propostas por estratégia
     direcoes = [s["color"] for s in sinais]
     
-    # Se houver sinais contraditórios (ex: um quer A e outro quer V), fica em observação
     if len(set(direcoes)) > 1:
         return None
 
-    # Exigir pelo menos duas confirmações direcionais independentes (ou reforço de contexto)
-    # Vamos contar quantas estratégias concordam com a direção unânime
     direcao_unanime = direcoes[0]
     sinais_validos = [s for s in sinais if s["color"] == direcao_unanime]
 
-    # Aplicar Estratégia 3 como filtro de contexto: se a Maioria Recente contraria estritamente, anular
     if contexto_forte and contexto_forte != direcao_unanime and len(sinais_validos) < 2:
         return None
 
@@ -414,7 +388,6 @@ def generate_decision(chat_id, session):
     if session["blocked"] or session["active_target"] is not None:
         return
 
-    # Evitar duplicar previsões pendentes
     if session["pending_paper"] is not None:
         return
 
@@ -427,11 +400,9 @@ def generate_decision(chat_id, session):
     session["pending_paper"] = [candidate]
     status, detail = brain_status(session)
 
-    # Se a estratégia não estiver validada estatisticamente
     if not strategy_validated(session):
         return
 
-    # Validação aprovada: Executar entrada real
     session["active_target"] = candidate["color"]
     session["gale"] = 0
     session["stats"]["entries"] += 1
@@ -565,7 +536,6 @@ def stats_command(message):
     recent_rate = (sum(recent_paper) / len(recent_paper) * 100) if recent_paper else 0
     lower = (wilson_lower_bound(sum(paper), len(paper)) * 100) if paper else 0
 
-    # Desempenho por estratégia
     strat_text = ""
     for s_name, s_data in session["strategy_stats"].items():
         s_tot = s_data["wins"] + s_data["losses"]
@@ -608,7 +578,7 @@ def reset_command(message):
 
 
 # =====================================================
-# RECEBER RESULTADOS DA MESA
+# RECEBER RESULTADOS DA MESA (COM FEEDBACK DE CONFIRMAÇÃO)
 # =====================================================
 
 @bot.message_handler(
@@ -660,8 +630,7 @@ def handle_results(message):
             message,
             "🧠 *HISTÓRICO CARREGADO!* 🚀\n\n"
             "As 10 jogadas foram guardadas.\n"
-            "Envia agora **apenas UMA nova jogada** de cada vez.\n\n"
-            "Utiliza /status para acompanhar.",
+            "Envia agora **apenas UMA nova jogada** de cada vez.",
             parse_mode="Markdown"
         )
         return
@@ -674,7 +643,15 @@ def handle_results(message):
         )
         return
 
+    # Processar o resultado da ronda
     receive_result(chat_id, session, cleaned)
+    
+    # Feedback imediato de confirmação para saberes que o bot leu a jogada, Zé!
+    bot.reply_to(
+        message,
+        f"✅ Jogada `{cleaned}` registada! Histórico ativo: `{len(session['history'])}` rondas. A analisar...",
+        parse_mode="Markdown"
+    )
 
 
 # =====================================================
