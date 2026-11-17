@@ -2,8 +2,11 @@ import os
 from flask import Flask, request
 import telebot
 
-# Configurações do Bot
-TOKEN = os.getenv("TELEGRAM_TOKEN", "8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0")
+# --- AS TUA CONFIGURAÇÕES DIRETAS (SEM DESCULPAS) ---
+TOKEN = "AQUI_O_TEU_TOKEN_DO_BOTFATHER"
+RENDER_URL = "https://o-teu-servico.onrender.com"  # Ex: https://bot-bacbo.onrender.com (sem barra no fim)
+# ----------------------------------------------------
+
 bot = telebot.TeleBot(TOKEN)
 server = Flask(__name__)
 
@@ -23,14 +26,13 @@ historico_mesa = []
 def cerebro_cirurgico_20_1(hist):
     """
     Cérebro de Alta Precisão (Foco: 20 Wins / Max 1 Loss).
-    Só dispara gatilhos blindados baseados em exaustão extrema e desequilíbrios pesados.
+    Focado estritamente em exaustão extrema e desequilíbrios profundos.
     """
-    # Filtra apenas Azul e Vermelho para calcular a tendência pura
     puros = [x for x in hist if x in ['A', 'V']]
     if len(puros) < 20:
-        return f"⏳ A calibrar o Cérebro Cirúrgico... ({len(puros)}/20 rondas necessárias para análise profunda)."
+        return f"⏳ A calibrar o Cérebro Cirúrgico... ({len(puros)}/20 rondas)."
 
-    # 1. Gatilho de Exaustão Extrema (Ex: 7 ou mais repetidos seguidos -> Entrar na inversão)
+    # Gatilho de Exaustão Extrema (7 ou mais seguidos -> Inversão)
     ultimos = puros[-7:]
     if all(x == ultimos[0] for x in ultimos):
         tendencia = ultimos[0]
@@ -38,7 +40,7 @@ def cerebro_cirurgico_20_1(hist):
         nome_sinal = 'VERMELHO' if sinal == 'V' else 'AZUL'
         return f"🔥 [ALTA PRECISÃO] EXAUSTÃO DETETADA ({len(ultimos)} seguidos)!\n👉 ENTRAR COM FORÇA EM: **{nome_sinal}** (3€/1€ + G1 6€/1€)"
 
-    # 2. Gatilho de Desequilíbrio Estrutural nas últimas 20 rondas
+    # Gatilho de Desequilíbrio Estrutural (15+ numa cor em 20 rondas)
     bloco = puros[-20:]
     azuis = bloco.count('A')
     vermelhos = bloco.count('V')
@@ -48,7 +50,7 @@ def cerebro_cirurgico_20_1(hist):
     elif vermelhos >= 15:
         return "⚠️ [ALTA PRECISÃO] DESEQUILÍBRIO SEVERO! 15+ Vermelhos em 20 rondas.\n👉 ENTRAR NA COR OPOSTA: **AZUL (A)**"
 
-    return "🛡️ Mesa em zona de silêncio do Cérebro. Aguardar padrão limpo (Sem risco desnecessário)."
+    return "🛡️ Mesa em zona de silêncio. Aguardar padrão limpo."
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -56,7 +58,7 @@ def send_welcome(message):
         "🤖 **Cérebro Cirúrgico (Objetivo 20/1) Ativo, Zé!**\n\n"
         "Comandos disponíveis:\n"
         "• Envia **A**, **V** ou **T** para alimentar o histórico.\n"
-        "• Envia /stats para ver o ponto da situação das wins, empates e banca.\n"
+        "• Envia /stats para ver o saldo, wins, empates e losses.\n"
         "• Envia /reset para reiniciar a sessão.",
         parse_mode="Markdown"
     )
@@ -84,18 +86,17 @@ def reset_session(message):
     banca_atual = banca_inicial
     historico_mesa.clear()
     stats = {"wins_cor": 0, "wins_empate": 0, "losses": 0, "total_operacoes": 0}
-    bot.reply_to(message, "🔄 Sessão reiniciada! Histórico limpo, vamos à caça dos greens.")
+    bot.reply_to(message, "🔄 Sessão reiniciada do zero! Histórico limpo.")
 
 @bot.message_handler(func=lambda message: True)
 def receber_jogada(message):
     global banca_atual, stats
     texto_msg = message.text.strip().upper()
     
-    # Se o utilizador mandar o resultado direto de uma operação fechada:
     if texto_msg == 'WIN':
         stats['wins_cor'] += 1
         stats['total_operacoes'] += 1
-        banca_atual += 1.0  # Lucro limpo ajustado do G1 na cor (+1€)
+        banca_atual += 1.0  # Lucro limpo do G1 na cor (+1€)
         bot.reply_to(message, f"✅ Registado: **WIN**! Banca atual: {banca_atual:.2f}€", parse_mode="Markdown")
         return
         
@@ -111,18 +112,14 @@ def receber_jogada(message):
         bot.reply_to(message, aviso_alerta, parse_mode="Markdown")
         return
 
-    # Registo de letras (A, V ou T)
     for char in texto_msg:
         if char in ['A', 'V', 'T']:
             historico_mesa.append(char)
-            
-            # Se saiu Empate (T), contabiliza como vitória do empate automaticamente
             if char == 'T':
                 stats['wins_empate'] += 1
                 stats['total_operacoes'] += 1
                 banca_atual += 3.0 # Lucro limpo seguro do empate no G1
 
-    # Corre o cérebro cirúrgico atualizado
     analise = cerebro_cirurgico_20_1(historico_mesa)
     
     resposta = (
@@ -131,7 +128,6 @@ def receber_jogada(message):
     )
     bot.reply_to(message, resposta, parse_mode="Markdown")
 
-# Configuração do Webhook para o Render
 @server.route('/' + TOKEN, methods=['POST'])
 def getMessage():
     json_string = request.get_data().decode('utf-8')
@@ -140,10 +136,10 @@ def getMessage():
     return "!", 200
 
 @server.route("/")
-def webhook():
-    bot.remove_webhook()
-    bot.set_webhook(url='O_TEU_LINK_DO_RENDER/' + TOKEN)
-    return "Cérebro Cirúrgico 20/1 Ativo e a Funcionar, Zé!", 200
+def index():
+    return "Cérebro Cirúrgico 20/1 Online e Operacional, Zé!", 200
 
 if __name__ == "__main__":
+    bot.remove_webhook()
+    bot.set_webhook(url=f"{RENDER_URL}/{TOKEN}")
     server.run(host="0.0.0.0", port=int(os.getenv('PORT', 5000)))
