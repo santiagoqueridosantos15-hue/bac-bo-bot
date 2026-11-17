@@ -8,7 +8,7 @@ from flask import Flask
 
 # =====================================================
 # BAC BO - ULTIMATE MULTISTRATEGY BRAIN
-# Motor inteligente com 4 estratégias, simulação e G1
+# Motor inteligente com 4 estratégias, G1, Empate Protegido e 30 ciclos
 # =====================================================
 
 TOKEN = os.getenv(
@@ -30,8 +30,9 @@ PROTECAO_T = 1
 JANELA = 10
 LIMITE_LOSSES = 2
 
-MIN_PAPER = 100
-MIN_RECENTES = 50
+# Ajustado para 30 simulações de arranque rápido, Zé!
+MIN_PAPER = 30
+MIN_RECENTES = 15
 
 # Sessões em memória por chat
 sessions = {}
@@ -68,8 +69,9 @@ def nova_sessao():
         "gale": 0,
         "blocked": False,
 
-        # Previsão experimental pendente
+        # Fila de simulação em papel (suporta ciclo Entrada -> G1)
         "pending_paper": None,
+        "pending_paper_g1": None,
 
         # Resultados globais da simulação em tempo real
         "paper_results": [],
@@ -106,7 +108,6 @@ def multi_strategy_brain(history):
     if len(puros) < 20:
         return None
 
-    ultimos_5 = puros[-5:]
     ultimos_10 = puros[-10:]
     ultimos_20 = puros[-20:]
 
@@ -261,35 +262,72 @@ def brain_status(session):
 
 
 # =====================================================
-# AVALIAÇÃO DE SIMULAÇÃO (PAPER TRADING)
+# AVALIAÇÃO DE SIMULAÇÃO (PAPEL COM G1 E EMPATE PROTEGIDO VENCEDOR)
 # =====================================================
 
 def evaluate_paper(session, real_result):
-    pending_list = session["pending_paper"]
+    # Se houver previsões pendentes em fase de G1
+    if session.get("pending_paper_g1"):
+        pending_list = session["pending_paper_g1"]
+        session["pending_paper_g1"] = None
+
+        if real_result == "T":
+            session["paper_ties"] += 1
+            for pred in pending_list:
+                session["paper_results"].append(True)
+                strat_name = pred["strategy"]
+                if strat_name in session["strategy_stats"]:
+                    session["strategy_stats"][strat_name]["signals"] += 1
+                    session["strategy_stats"][strat_name]["wins"] += 1
+        else:
+            for pred in pending_list:
+                correct = (pred["color"] == real_result)
+                session["paper_results"].append(correct)
+                session["paper_results"] = session["paper_results"][-1000:]
+
+                strat_name = pred["strategy"]
+                if strat_name in session["strategy_stats"]:
+                    session["strategy_stats"][strat_name]["signals"] += 1
+                    if correct:
+                        session["strategy_stats"][strat_name]["wins"] += 1
+                    else:
+                        session["strategy_stats"][strat_name]["losses"] += 1
+        return
+
+    # Avaliação da Entrada Inicial pendente
+    pending_list = session.get("pending_paper")
     if not pending_list:
         return
 
     if real_result == "T":
         session["paper_ties"] += 1
-    else:
         for pred in pending_list:
-            correct = (pred["color"] == real_result)
-            session["paper_results"].append(correct)
-            session["paper_results"] = session["paper_results"][-1000:]
-
+            session["paper_results"].append(True)
             strat_name = pred["strategy"]
             if strat_name in session["strategy_stats"]:
                 session["strategy_stats"][strat_name]["signals"] += 1
-                if correct:
+                session["strategy_stats"][strat_name]["wins"] += 1
+        session["pending_paper"] = None
+    else:
+        still_pending_g1 = []
+        for pred in pending_list:
+            if pred["color"] == real_result:
+                session["paper_results"].append(True)
+                session["paper_results"] = session["paper_results"][-1000:]
+                strat_name = pred["strategy"]
+                if strat_name in session["strategy_stats"]:
+                    session["strategy_stats"][strat_name]["signals"] += 1
                     session["strategy_stats"][strat_name]["wins"] += 1
-                else:
-                    session["strategy_stats"][strat_name]["losses"] += 1
+            else:
+                still_pending_g1.append(pred)
 
-    session["pending_paper"] = None
+        session["pending_paper"] = None
+        if still_pending_g1:
+            session["pending_paper_g1"] = still_pending_g1
 
 
 # =====================================================
-# GESTÃO DAS OPERAÇÕES REAIS
+# GESTÃO DAS OPERAÇÕES REAIS (COM LUCRO NA PROTEÇÃO DE EMPATE)
 # =====================================================
 
 def close_cycle(session):
@@ -302,16 +340,15 @@ def process_live_bet(chat_id, session, result):
     if target is None:
         return
 
-    # EMPATE (T)
+    # EMPATE (T) - Proteção paga lucro líquido de 4x na ficha de T!
     if result == "T":
         session["stats"]["ties"] += 1
         close_cycle(session)
         bot.send_message(
             chat_id,
             "🟡 *RESULTADO EMPATE (T)*\n\n"
-            "Aposta principal devolvida pela mesa.\n"
-            "Proteção de empate considerada de acordo com as regras.\n"
-            "Ciclo encerrado.",
+            "Aposta principal devolvida e **Proteção T vencedora com lucro líquido**! ✨💰\n"
+            "Ciclo encerrado com sucesso.",
             parse_mode="Markdown"
         )
         return
@@ -388,7 +425,7 @@ def generate_decision(chat_id, session):
     if session["blocked"] or session["active_target"] is not None:
         return
 
-    if session["pending_paper"] is not None:
+    if session["pending_paper"] is not None or session.get("pending_paper_g1") is not None:
         return
 
     candidate = multi_strategy_brain(session["history"])
@@ -439,7 +476,7 @@ def receive_result(chat_id, session, result):
 
 
 # =====================================================
-# COMANDO START
+# COMANDOS DO BOT
 # =====================================================
 
 @bot.message_handler(commands=["start"])
@@ -449,16 +486,12 @@ def start(message):
     bot.reply_to(
         message,
         "🤖 *BAC BO - MULTISTRATEGY BRAIN*\n\n"
-        "Sistema iniciado com sucesso!\n\n"
+        "Sistema otimizado com calibração de 30 ciclos, G1 e Empate Protegido Lucrativo!\n\n"
         "📊 Envia as tuas 10 jogadas iniciais.\n\n"
         "Exemplo:\n"
         "`A V A A V T V A V V`\n\n"
-        "🔵 A = Azul\n"
-        "🔴 V = Vermelho\n"
-        "🟡 T = Empate\n\n"
-        "💰 Entrada: 3€\n"
-        "🔄 G1: 6€\n"
-        "🛡️ Proteção T: 1€\n"
+        "🔵 A = Azul | 🔴 V = Vermelho | 🟡 T = Empate\n\n"
+        "💰 Entrada: 3€ | 🔄 G1: 6€ | 🛡️ Proteção T: 1€\n"
         "🚨 Máximo: 2 perdas finais\n\n"
         "/stats - Estatísticas detalhadas\n"
         "/status - Estado do cérebro\n"
@@ -467,10 +500,6 @@ def start(message):
         parse_mode="Markdown"
     )
 
-
-# =====================================================
-# COMANDO AJUDA
-# =====================================================
 
 @bot.message_handler(commands=["ajuda"])
 def help_command(message):
@@ -485,10 +514,6 @@ def help_command(message):
         parse_mode="Markdown"
     )
 
-
-# =====================================================
-# COMANDO STATUS
-# =====================================================
 
 @bot.message_handler(commands=["status"])
 def status_command(message):
@@ -506,17 +531,13 @@ def status_command(message):
         f"📊 Estado: {status}\n"
         f"🔎 {detail}\n"
         f"📜 Histórico: {len(session['history'])} jogadas\n"
-        f"🎯 Simulações concluídas: {len(session['paper_results'])}\n"
+        f"🎯 Simulações concluídas: {len(session['paper_results'])}/{MIN_PAPER}\n"
         f"🟡 Empates simulados: {session['paper_ties']}\n"
         f"🛡️ Operação ativa: {'SIM' if session['active_target'] else 'NÃO'}\n"
         f"🚨 Bloqueado: {'SIM' if session['blocked'] else 'NÃO'}",
         parse_mode="Markdown"
     )
 
-
-# =====================================================
-# COMANDO STATS
-# =====================================================
 
 @bot.message_handler(commands=["stats"])
 def stats_command(message):
@@ -548,10 +569,10 @@ def stats_command(message):
         "OPERAÇÕES REAIS\n"
         f"🟢 Greens: {st['wins']} (G1: {st['wins_g1']})\n"
         f"🔴 Perdas finais: {st['losses']}/{LIMITE_LOSSES}\n"
-        f"🟡 Empates: {st['ties']}\n"
+        f"🟡 Empates (Proteção Lucrativa): {st['ties']}\n"
         f"🎯 Entradas: {st['entries']}\n"
         f"📈 Taxa de acerto real: {rate:.2f}%\n\n"
-        "SIMULAÇÃO / PAPEL\n"
+        f"SIMULAÇÃO / PAPEL (Alvo: {MIN_PAPER} ciclos)\n"
         f"📊 Total ciclos simulados: {len(paper)}\n"
         f"📈 Taxa simulada global: {paper_rate:.2f}%\n"
         f"📈 Taxa últimas {MIN_RECENTES}: {recent_rate:.2f}%\n"
@@ -562,10 +583,6 @@ def stats_command(message):
         parse_mode="Markdown"
     )
 
-
-# =====================================================
-# COMANDO RESET
-# =====================================================
 
 @bot.message_handler(commands=["reset"])
 def reset_command(message):
@@ -646,7 +663,7 @@ def handle_results(message):
     # Processar o resultado da ronda
     receive_result(chat_id, session, cleaned)
     
-    # Feedback imediato de confirmação para saberes que o bot leu a jogada, Zé!
+    # Feedback imediato de confirmação
     bot.reply_to(
         message,
         f"✅ Jogada `{cleaned}` registada! Histórico ativo: `{len(session['history'])}` rondas. A analisar...",
