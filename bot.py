@@ -1,221 +1,756 @@
-import telebot
+
 import os
-from flask import Flask
+import re
+from math import sqrt
 from threading import Thread
 
-# Configuração do Bot de Telegram
-TOKEN = '8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0'
+import telebot
+from flask import Flask
+
+# =====================================================
+# BAC BO - ULTIMATE BRAIN
+# Motor experimental + Telegram + Flask
+# =====================================================
+
+TOKEN = os.getenv(
+    "BOT_TOKEN",
+    "8922303337:AAGiqzCVesRtMgy1mIR1vK3hF7SW9wsONM0"
+)
+
+if not TOKEN or TOKEN == "COLOCA_AQUI_O_TEU_TOKEN_NOVO":
+    raise ValueError("Configura o teu novo token BOT_TOKEN.")
+
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
-# Servidor Web integrado para manter o bot ativo 24/7 (Render / UptimeRobot)
-app = Flask('')
+# CONFIGURAÇÕES
+ENTRADA = 3
+GALE1 = 6
+PROTECAO_T = 1
 
-@app.route('/')
+JANELA = 10
+LIMITE_LOSSES = 2
+
+MIN_PAPER = 100
+MIN_RECENTES = 50
+
+# Sessões em memória
+sessions = {}
+
+
+# =====================================================
+# SERVIDOR WEB
+# =====================================================
+
+@app.route("/")
 def home():
-    return "Bot Bac Bo 'Smart Brain 10 Rondas' a operar 24/7!"
+    return "BAC BO ULTIMATE BRAIN - ONLINE"
+
 
 def run_web():
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        use_reloader=False
+    )
 
-# Base de dados em memória para gerir as sessões em tempo real
-user_sessions = {}
 
-def cerebro_janela_dez_seguro(historico):
-    """
-    CÉREBRO INTELIGENTE E CAUTELOSO (JANELA DE 10 RONDAS):
-    - Foco estricto em proteção de capital e Gale 1.
-    - Só dispara quando há exaustão clara (respeitando inversões) ou desequilíbrio seguro.
-    - Nunca segue ping-pongs cegos que possam quebrar a banca.
-    """
-    puros = [x for x in historico if x in ['A', 'V']]
-    
-    # Exige o bloco de 10 rondas para análise
-    if len(puros) < 10:
+# =====================================================
+# NOVA SESSÃO
+# =====================================================
+
+def nova_sessao():
+    return {
+        "history": [],
+        "awaiting_seed": True,
+
+        "active_target": None,
+        "gale": 0,
+        "blocked": False,
+
+        # Previsão experimental pendente
+        "pending_paper": None,
+
+        # Resultados da simulação em tempo real
+        "paper_results": [],
+        "paper_ties": 0,
+
+        # Estatísticas das operações
+        "stats": {
+            "wins": 0,
+            "wins_g1": 0,
+            "losses": 0,
+            "ties": 0,
+            "entries": 0,
+            "observations": 0
+        }
+    }
+
+
+# =====================================================
+# CÉREBRO - ANÁLISE DAS ÚLTIMAS 10 JOGADAS
+# =====================================================
+
+def ultimate_brain(history):
+
+    if len(history) < JANELA:
         return None
-        
-    dez_rondas = puros[-10:]
-    
-    # 1. Gatilho de Exaustão Segura (Ex: 5 ou mais repetidos seguidos -> Inverter para a cor oposta)
-    ultimos = puros[-5:]
-    if all(x == ultimos[0] for x in ultimos):
-        tendencia = ultimos[0]
-        return 'V' if tendencia == 'A' else 'A'
-        
-    # 2. Desequilíbrio Defensivo nas últimas 10 rondas (Ex: 7 ou mais de uma cor -> Puxar a correção)
-    total_a = dez_rondas.count('A')
-    total_v = dez_rondas.count('V')
-    
-    if total_a >= 7:
-        return 'V'
-    elif total_v >= 7:
-        return 'A'
-        
-    # Se a mesa estiver em ping-pong misto ou sem exaustão clara, fica calado para não perder dinheiro
+
+    window = history[-JANELA:]
+
+    colors = [
+        x for x in window
+        if x in ("A", "V")
+    ]
+
+    if len(colors) < 7:
+        return None
+
+    total_a = colors.count("A")
+    total_v = colors.count("V")
+
+    # Detetar sequência consecutiva
+    streak = 1
+
+    for i in range(len(colors) - 1, 0, -1):
+        if colors[i] == colors[i - 1]:
+            streak += 1
+        else:
+            break
+
+    last_color = colors[-1]
+
+    # REGRA 1:
+    # Sequência prolongada: testar hipótese de inversão
+    if streak >= 5:
+        return {
+            "color": "V" if last_color == "A" else "A",
+            "reason": f"Sequência de {streak} resultados iguais",
+            "pattern": "streak_reversal"
+        }
+
+    # REGRA 2:
+    # Desequilíbrio muito elevado: testar correção
+    if total_a >= 8:
+        return {
+            "color": "V",
+            "reason": f"{total_a} AZUIS nas últimas 10",
+            "pattern": "imbalance_reversal"
+        }
+
+    if total_v >= 8:
+        return {
+            "color": "A",
+            "reason": f"{total_v} VERMELHOS nas últimas 10",
+            "pattern": "imbalance_reversal"
+        }
+
+    # Sem hipótese suficientemente definida
     return None
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    chat_id = message.chat.id
-    user_sessions[chat_id] = {
-        'history': [],
-        'fase_gale': 0,
-        'cor_alvo': None,
-        'stats': {
-            'wins_cor': 0,
-            'wins_empate': 0,
-            'losses': 0
-        }
-    }
-    
-    texto = (
-        "🤖 **BAC BO - SMART BRAIN CAUTELOSO (Foco 20/1)** 🏆🔥💎\n\n"
-        "• *Análise inteligente focada em exaustões e correções seguras*\n"
-        "• *Suporte estrito a GALE 1 (G1) + Proteção obrigatória no Empate (T)*\n\n"
-        "📜 **Envia os resultados (`A`, `V` ou `T`) para o cérebro analisar e decidir com cautela!**"
+
+# =====================================================
+# TESTE ESTATÍSTICO
+# =====================================================
+
+def wilson_lower_bound(wins, total):
+
+    if total == 0:
+        return 0.0
+
+    z = 1.96
+    p = wins / total
+
+    denominator = 1 + z * z / total
+
+    center = p + z * z / (2 * total)
+
+    margin = z * sqrt(
+        (p * (1 - p) / total)
+        + (z * z / (4 * total * total))
     )
-    bot.reply_to(message, texto, parse_mode="Markdown")
 
-@bot.message_handler(commands=['stats'])
-def send_stats(message):
-    chat_id = message.chat.id
-    if chat_id not in user_sessions:
-        bot.reply_to(message, "⚠️ Nenhuma sessão ativa detetada. Usa o comando `/start`.", parse_mode="Markdown")
-        return
-        
-    sessao = user_sessions[chat_id]
-    wins_c = sessao['stats']['wins_cor']
-    wins_e = sessao['stats']['wins_empate']
-    losses = sessao['stats']['losses']
-    total_wins = wins_c + wins_e
-    total_ops = total_wins + losses
-    win_rate = (total_wins / total_ops * 100) if total_ops > 0 else 0
-    
-    texto = (
-        "📊 **Relatório de Desempenho (Seguro):** 📈\n\n"
-        f"🟢 **Wins na Cor:** `{wins_c}`\n"
-        f"🟡 **Wins de Empate (T):** `{wins_e}`\n"
-        f"🔴 **Losses Finais (Após G1):** `{losses}`\n"
-        f"🎯 **Total de Operações:** `{total_ops}`\n"
-        f"📈 **Assertividade:** `{win_rate:.2f}%`\n"
-        f"📜 Histórico Ativo: `{len(sessao['history'])} rondas`"
+    return (center - margin) / denominator
+
+
+def strategy_validated(session):
+
+    results = session["paper_results"]
+
+    total = len(results)
+
+    if total < MIN_PAPER:
+        return False
+
+    recent = results[-MIN_RECENTES:]
+
+    wins = sum(results)
+    recent_wins = sum(recent)
+
+    lower_bound = wilson_lower_bound(
+        wins,
+        total
     )
-    bot.reply_to(message, texto, parse_mode="Markdown")
 
-@bot.message_handler(commands=['reset'])
-def reset_session(message):
-    chat_id = message.chat.id
-    user_sessions[chat_id] = {
-        'history': [],
-        'fase_gale': 0,
-        'cor_alvo': None,
-        'stats': {'wins_cor': 0, 'wins_empate': 0, 'losses': 0}
-    }
-    bot.reply_to(message, "🔄 Sessão reiniciada do zero! Histórico limpo, Zé.", parse_mode="Markdown")
+    recent_rate = recent_wins / len(recent)
 
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    chat_id = message.chat.id
-    texto_input = message.text.strip().upper()
-    
-    if chat_id not in user_sessions:
-        user_sessions[chat_id] = {
-            'history': [], 
-            'fase_gale': 0,
-            'cor_alvo': None,
-            'stats': {'wins_cor': 0, 'wins_empate': 0, 'losses': 0}
-        }
-    
-    sessao = user_sessions[chat_id]
-    
-    novas_letras = [char for char in texto_input if char in ['A', 'V', 'T']]
-    if not novas_letras:
-        bot.reply_to(message, "⚠️ Formato inválido. Envia apenas letras de resultado (`A`, `V` ou `T`).", parse_mode="Markdown")
+    return (
+        lower_bound > 0.50
+        and recent_rate > 0.50
+    )
+
+
+# =====================================================
+# ESTADO DO CÉREBRO
+# =====================================================
+
+def brain_status(session):
+
+    total = len(session["paper_results"])
+
+    if total < MIN_PAPER:
+        return (
+            "CALIBRAÇÃO EXPERIMENTAL",
+            f"{total}/{MIN_PAPER} previsões simuladas"
+        )
+
+    if strategy_validated(session):
+        return (
+            "FILTRO ESTATÍSTICO APROVADO",
+            "Critérios experimentais cumpridos"
+        )
+
+    return (
+        "OBSERVAÇÃO",
+        "A estratégia ainda não demonstrou vantagem"
+    )
+
+
+# =====================================================
+# PROCESSAMENTO DE PREVISÕES SIMULADAS
+# =====================================================
+
+def evaluate_paper(session, real_result):
+
+    prediction = session["pending_paper"]
+
+    if prediction is None:
         return
-        
-    for resultado_real in novas_letras:
-        sessao['history'].append(resultado_real)
-        if len(sessao['history']) > 250:
-            sessao['history'] = sessao['history'][-250:]
-            
-        if sessao['cor_alvo'] is not None:
-            cor_esperada = sessao['cor_alvo']
-            
-            # Se sair Empate (T), conta logo como vitória do empate
-            if resultado_real == 'T':
-                sessao['stats']['wins_empate'] += 1
-                sessao['cor_alvo'] = None
-                sessao['fase_gale'] = 0
-                bot.reply_to(
-                    message, 
-                    f"🟡 **PROTEÇÃO NO EMPATE (T) COBERTA COM SUCESSO!** (+3€)\n"
-                    f"Aposta principal devolvida. A aguardar próximo gatilho seguro...", 
-                    parse_mode="Markdown"
-                )
-                continue
-                
-            elif resultado_real == cor_esperada:
-                sessao['stats']['wins_cor'] += 1
-                sessao['cor_alvo'] = None
-                sessao['fase_gale'] = 0
-                bot.reply_to(
-                    message, 
-                    f"🎉 **GREEN / VITÓRIA CONFIRMADA!** 🟢✨\n"
-                    f"Saiu `{resultado_real}` com leitura segura!", 
-                    parse_mode="Markdown"
-                )
-                continue
-                
-            else:
-                # Sistema estrito de Gale 1 (Apenas G1 e fecho)
-                if sessao['fase_gale'] == 0:
-                    sessao['fase_gale'] = 1 
-                    cor_nome = "AZUL 🔵" if cor_esperada == 'A' else "VERMELHO 🔴"
-                    bot.reply_to(
-                        message, 
-                        f"⚠️ **Loss na Entrada Principal (Saiu {resultado_real})**\n\n"
-                        f"🔄 **GALE 1 (G1 - ÚLTIMO NÍVEL) OBRIGATÓRIO** 🚨\n"
-                        f"👉 **Entrar no {cor_nome} (6€) + Proteger no T (1€)**", 
-                        parse_mode="Markdown"
-                    )
-                    continue
-                else:
-                    # Falhou o Gale 1 -> Loss Final
-                    sessao['stats']['losses'] += 1
-                    sessao['cor_alvo'] = None
-                    sessao['fase_gale'] = 0
-                    
-                    aviso_loss = (
-                        f"❌ **LOSS FINAL (Gale 1 Falhado - Saiu {resultado_real})**\n"
-                        f"🛑 Ciclo encerrado. Cérebro em pausa de proteção..."
-                    )
-                    if sessao['stats']['losses'] >= 2:
-                        aviso_loss += "\n\n🚨 **ATENÇÃO ZÉ! Atingiste o limite máximo de 2 losses! Cerra a mesa e respira!**"
-                        
-                    bot.reply_to(message, aviso_loss, parse_mode="Markdown")
-                    continue
 
-    if sessao['cor_alvo'] is None:
-        sugestao = cerebro_janela_dez_seguro(sessao['history'])
-        
-        if sugestao is None:
-            resposta = (
-                f"🧠 **Smart Brain Cauteloso**\n"
-                f"🛡️ *Mesa sem exaustão ou desequilíbrio seguro. Em observação inteligente...*"
-            )
+    if real_result == "T":
+        session["paper_ties"] += 1
+
+    else:
+        correct = prediction["color"] == real_result
+
+        session["paper_results"].append(correct)
+
+        # Manter um histórico limitado
+        session["paper_results"] = (
+            session["paper_results"][-1000:]
+        )
+
+    session["pending_paper"] = None
+
+
+# =====================================================
+# GESTÃO DAS OPERAÇÕES
+# =====================================================
+
+def close_cycle(session):
+    session["active_target"] = None
+    session["gale"] = 0
+
+
+def process_live_bet(chat_id, session, result):
+
+    target = session["active_target"]
+
+    if target is None:
+        return
+
+    # EMPATE
+    if result == "T":
+
+        session["stats"]["ties"] += 1
+
+        close_cycle(session)
+
+        bot.send_message(
+            chat_id,
+            "🟡 *RESULTADO EMPATE (T)*\n\n"
+            "Ciclo encerrado.\n"
+            "Empate registado separadamente.\n"
+            "A liquidação financeira depende das "
+            "regras da mesa.\n\n"
+            "O cérebro vai analisar novamente.",
+            parse_mode="Markdown"
+        )
+
+        return
+
+    # ACERTO
+    if result == target:
+
+        if session["gale"] == 0:
+            session["stats"]["wins"] += 1
+            level = "ENTRADA PRINCIPAL"
         else:
-            sessao['cor_alvo'] = sugestao
-            sessao['fase_gale'] = 0
-            cor_nome = "AZUL 🔵" if sugestao == 'A' else "VERMELHO 🔴"
-            resposta = (
-                f"🧠 **DIRETRIZ SEGURA VALIDADA** 🎲\n"
-                f"🎯 **OPORTUNIDADE DE EXAUSTÃO/CORREÇÃO!**\n"
-                f"👉 **Entrar Principal: {cor_nome} (3€) + Proteger no T (1€)**"
-            )
-            
-        bot.reply_to(message, resposta, parse_mode="Markdown")
+            session["stats"]["wins"] += 1
+            session["stats"]["wins_g1"] += 1
+            level = "GALE 1"
 
-if __name__ == '__main__':
-    t = Thread(target=run_web)
-    t.start()
-    bot.infinity_polling()
+        close_cycle(session)
+
+        bot.send_message(
+            chat_id,
+            "🟢 *RESULTADO CORRETO!*\n\n"
+            f"🏆 Resolução: {level}\n"
+            f"🎯 Resultado: {result}\n\n"
+            "Ciclo encerrado.\n"
+            "A aguardar nova análise.",
+            parse_mode="Markdown"
+        )
+
+        return
+
+    # FALHA DA ENTRADA PRINCIPAL
+    if session["gale"] == 0:
+
+        session["gale"] = 1
+
+        cor_nome = (
+            "AZUL 🔵" if target == "A"
+            else "VERMELHO 🔴"
+        )
+
+        bot.send_message(
+            chat_id,
+            "🔴 *LOSS NA ENTRADA PRINCIPAL*\n\n"
+            "🚨 ÚLTIMO NÍVEL: GALE 1\n\n"
+            f"👉 Direção: {cor_nome}\n"
+            f"💰 Gale 1: {GALE1}€\n"
+            f"🟡 Proteção T: {PROTECAO_T}€\n\n"
+            "Não existe Gale 2.",
+            parse_mode="Markdown"
+        )
+
+        return
+
+    # FALHA FINAL
+    session["stats"]["losses"] += 1
+
+    close_cycle(session)
+
+    losses = session["stats"]["losses"]
+
+    if losses >= LIMITE_LOSSES:
+
+        session["blocked"] = True
+
+        bot.send_message(
+            chat_id,
+            "🚨 *LIMITE DE PERDAS ATINGIDO!*\n\n"
+            f"🔴 Losses: {losses}/{LIMITE_LOSSES}\n\n"
+            "🛑 Sessão bloqueada.\n"
+            "Não serão autorizadas novas entradas.\n"
+            "Utiliza /reset para iniciar uma nova sessão.",
+            parse_mode="Markdown"
+        )
+
+    else:
+
+        bot.send_message(
+            chat_id,
+            "❌ *LOSS FINAL - GALE 1 FALHADO*\n\n"
+            f"🔴 Losses: {losses}/{LIMITE_LOSSES}\n\n"
+            "O ciclo terminou.\n"
+            "A próxima análise será independente.",
+            parse_mode="Markdown"
+        )
+
+
+# =====================================================
+# GERAR NOVA DECISÃO
+# =====================================================
+
+def generate_decision(chat_id, session):
+
+    if session["blocked"]:
+        return
+
+    if session["active_target"] is not None:
+        return
+
+    candidate = ultimate_brain(
+        session["history"]
+    )
+
+    if candidate is None:
+
+        session["stats"]["observations"] += 1
+
+        bot.send_message(
+            chat_id,
+            "🧠 *ULTIMATE BRAIN*\n\n"
+            "👁️ MODO OBSERVAÇÃO\n\n"
+            "Não foi encontrado um padrão selecionável.\n"
+            "O cérebro não vai forçar uma entrada.\n\n"
+            "A aguardar nova jogada.",
+            parse_mode="Markdown"
+        )
+
+        return
+
+    # Registar hipótese para avaliação futura
+    session["pending_paper"] = candidate
+
+    status, detail = brain_status(session)
+
+    # Sem validação: apenas observação
+    if not strategy_validated(session):
+
+        bot.send_message(
+            chat_id,
+            "🧠 *ULTIMATE BRAIN - CALIBRAÇÃO*\n\n"
+            f"🔎 Hipótese: {candidate['reason']}\n"
+            f"🎯 Direção experimental: {candidate['color']}\n\n"
+            f"📊 Estado: {status}\n"
+            f"📈 {detail}\n\n"
+            "🛡️ Ainda não existe autorização "
+            "para entrada real.\n"
+            "A previsão será avaliada em modo simulado.",
+            parse_mode="Markdown"
+        )
+
+        return
+
+    # Critérios experimentais cumpridos
+    session["active_target"] = candidate["color"]
+    session["gale"] = 0
+    session["stats"]["entries"] += 1
+
+    cor_nome = (
+        "AZUL 🔵" if candidate["color"] == "A"
+        else "VERMELHO 🔴"
+    )
+
+    bot.send_message(
+        chat_id,
+        "🧠 *ULTIMATE BRAIN*\n\n"
+        "📊 FILTRO EXPERIMENTAL APROVADO\n\n"
+        f"🎯 Direção: {cor_nome}\n"
+        f"💰 Entrada: {ENTRADA}€\n"
+        f"🟡 Proteção T: {PROTECAO_T}€\n\n"
+        f"🔎 Motivo: {candidate['reason']}\n\n"
+        "⚠️ Aprovação estatística histórica não "
+        "garante vantagem futura.\n"
+        "A entrada continua a ser uma decisão "
+        "de risco.",
+        parse_mode="Markdown"
+    )
+
+
+# =====================================================
+# RECEBER UMA NOVA JOGADA
+# =====================================================
+
+def receive_result(chat_id, session, result):
+
+    # Primeiro avalia a previsão anterior
+    evaluate_paper(session, result)
+
+    # Depois trata uma eventual operação ativa
+    process_live_bet(
+        chat_id,
+        session,
+        result
+    )
+
+    # Atualizar histórico
+    session["history"].append(result)
+
+    session["history"] = (
+        session["history"][-250:]
+    )
+
+    # Analisar novamente a janela atualizada
+    if not session["blocked"]:
+        generate_decision(chat_id, session)
+
+
+# =====================================================
+# COMANDO START
+# =====================================================
+
+@bot.message_handler(commands=["start"])
+def start(message):
+
+    sessions[message.chat.id] = nova_sessao()
+
+    bot.reply_to(
+        message,
+        "🤖 *BAC BO - ULTIMATE BRAIN*\n\n"
+        "Sistema iniciado!\n\n"
+        "📊 Envia as tuas últimas 10 jogadas.\n\n"
+        "Exemplo:\n"
+        "`A V A A V T V A V V`\n\n"
+        "🔵 A = Azul\n"
+        "🔴 V = Vermelho\n"
+        "🟡 T = Empate\n\n"
+        "💰 Entrada: 3€\n"
+        "🔄 G1: 6€\n"
+        "🛡️ Proteção T: 1€\n"
+        "🚨 Máximo: 2 perdas\n\n"
+        "/stats - Estatísticas\n"
+        "/status - Estado do cérebro\n"
+        "/reset - Reiniciar sessão\n"
+        "/ajuda - Ajuda",
+        parse_mode="Markdown"
+    )
+
+
+# =====================================================
+# COMANDO AJUDA
+# =====================================================
+
+@bot.message_handler(commands=["ajuda"])
+def help_command(message):
+
+    bot.reply_to(
+        message,
+        "📖 *COMO UTILIZAR*\n\n"
+        "1. Utiliza /start.\n"
+        "2. Envia exatamente 10 jogadas iniciais.\n"
+        "3. Depois envia apenas uma jogada de cada vez.\n"
+        "4. O cérebro atualiza a análise após cada resultado.\n\n"
+        "Nunca envies várias jogadas futuras de uma só vez.\n\n"
+        "A = Azul | V = Vermelho | T = Empate",
+        parse_mode="Markdown"
+    )
+
+
+# =====================================================
+# COMANDO STATUS
+# =====================================================
+
+@bot.message_handler(commands=["status"])
+def status_command(message):
+
+    session = sessions.get(message.chat.id)
+
+    if session is None:
+        bot.reply_to(message, "Utiliza /start primeiro.")
+        return
+
+    status, detail = brain_status(session)
+
+    bot.reply_to(
+        message,
+        "🧠 *ESTADO DO ULTIMATE BRAIN*\n\n"
+        f"📊 Estado: {status}\n"
+        f"🔎 {detail}\n"
+        f"📜 Histórico: {len(session['history'])} jogadas\n"
+        f"🎯 Previsões simuladas: "
+        f"{len(session['paper_results'])}\n"
+        f"🟡 Empates simulados: {session['paper_ties']}\n"
+        f"🛡️ Operação ativa: "
+        f"{'SIM' if session['active_target'] else 'NÃO'}\n"
+        f"🚨 Bloqueado: "
+        f"{'SIM' if session['blocked'] else 'NÃO'}",
+        parse_mode="Markdown"
+    )
+
+
+# =====================================================
+# COMANDO STATS
+# =====================================================
+
+@bot.message_handler(commands=["stats"])
+def stats_command(message):
+
+    session = sessions.get(message.chat.id)
+
+    if session is None:
+        bot.reply_to(message, "Utiliza /start primeiro.")
+        return
+
+    st = session["stats"]
+
+    resolved = st["wins"] + st["losses"]
+
+    rate = (
+        st["wins"] / resolved * 100
+        if resolved else 0
+    )
+
+    paper = session["paper_results"]
+
+    paper_rate = (
+        sum(paper) / len(paper) * 100
+        if paper else 0
+    )
+
+    lower = (
+        wilson_lower_bound(sum(paper), len(paper)) * 100
+        if paper else 0
+    )
+
+    bot.reply_to(
+        message,
+        "📊 *RELATÓRIO ULTIMATE BRAIN*\n\n"
+        "REAL / OPERAÇÕES\n"
+        f"🟢 Greens: {st['wins']}\n"
+        f"🏆 Greens em G1: {st['wins_g1']}\n"
+        f"🔴 Losses finais: {st['losses']}\n"
+        f"🟡 Empates: {st['ties']}\n"
+        f"🎯 Entradas: {st['entries']}\n"
+        f"📈 Taxa de acerto: {rate:.2f}%\n\n"
+        "SIMULAÇÃO / PAPEL\n"
+        f"📊 Previsões avaliadas: {len(paper)}\n"
+        f"🟢 Acertos: {sum(paper)}\n"
+        f"🔴 Erros: {len(paper) - sum(paper)}\n"
+        f"🟡 Empates simulados: {session['paper_ties']}\n"
+        f"📈 Taxa simulada: {paper_rate:.2f}%\n"
+        f"📉 Limite inferior Wilson: {lower:.2f}%\n\n"
+        "Nota: taxas de acerto não representam lucro.\n"
+        "Empates são excluídos da taxa de acerto.",
+        parse_mode="Markdown"
+    )
+
+
+# =====================================================
+# COMANDO RESET
+# =====================================================
+
+@bot.message_handler(commands=["reset"])
+def reset_command(message):
+
+    sessions[message.chat.id] = nova_sessao()
+
+    bot.reply_to(
+        message,
+        "🔄 Sessão reiniciada!\n\n"
+        "Envia novamente as últimas 10 jogadas.\n"
+        "As estatísticas anteriores foram reiniciadas."
+    )
+
+
+# =====================================================
+# RECEBER RESULTADOS
+# =====================================================
+
+@bot.message_handler(
+    func=lambda m: True,
+    content_types=["text"]
+)
+def handle_results(message):
+
+    chat_id = message.chat.id
+    session = sessions.get(chat_id)
+
+    if session is None:
+        bot.reply_to(
+            message,
+            "Utiliza /start para iniciar o cérebro."
+        )
+        return
+
+    raw = message.text.upper()
+
+    cleaned = re.sub(
+        r"[\s,;|]+",
+        "",
+        raw
+    )
+
+    if not cleaned or any(
+        c not in "AVT" for c in cleaned
+    ):
+        bot.reply_to(
+            message,
+            "⚠️ Formato inválido.\n"
+            "Utiliza apenas A, V ou T."
+        )
+        return
+
+    # BLOQUEIO DE SESSÃO
+    if session["blocked"]:
+        bot.reply_to(
+            message,
+            "🛑 Sessão bloqueada.\n"
+            "Utiliza /reset para iniciar outra."
+        )
+        return
+
+    # PRIMEIRO ENVIO: HISTÓRICO INICIAL
+    if session["awaiting_seed"]:
+
+        if len(cleaned) != JANELA:
+            bot.reply_to(
+                message,
+                "⚠️ Preciso de exatamente 10 jogadas iniciais.\n"
+                "Exemplo: AVAVTVAVVV"
+            )
+            return
+
+        session["history"] = list(cleaned)
+        session["awaiting_seed"] = False
+
+        candidate = ultimate_brain(
+            session["history"]
+        )
+
+        session["pending_paper"] = candidate
+
+        bot.reply_to(
+            message,
+            "🧠 *HISTÓRICO CARREGADO!*\n\n"
+            "As 10 jogadas foram guardadas.\n"
+            "Nenhuma foi tratada como aposta.\n\n"
+            "📊 O cérebro está em calibração.\n"
+            "A partir de agora envia apenas UMA "
+            "nova jogada de cada vez.\n\n"
+            "Utiliza /status para acompanhar.",
+            parse_mode="Markdown"
+        )
+
+        return
+
+    # DEPOIS DO HISTÓRICO: UMA JOGADA DE CADA VEZ
+    if len(cleaned) != 1:
+
+        bot.reply_to(
+            message,
+            "⚠️ Depois das 10 jogadas iniciais, "
+            "envia apenas um resultado por mensagem.\n\n"
+            "Exemplo: A"
+        )
+        return
+
+    receive_result(
+        chat_id,
+        session,
+        cleaned
+    )
+
+
+# =====================================================
+# INICIAR
+# =====================================================
+
+if __name__ == "__main__":
+
+    print("BAC BO ULTIMATE BRAIN ONLINE")
+
+    Thread(
+        target=run_web,
+        daemon=True
+    ).start()
+
+    bot.infinity_polling(
+        skip_pending=True,
+        timeout=20,
+        long_polling_timeout=20
+    )
