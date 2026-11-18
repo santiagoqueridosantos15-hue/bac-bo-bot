@@ -8,7 +8,7 @@ from flask import Flask
 
 # =====================================================
 # BAC BO - ULTIMATE MULTISTRATEGY BRAIN
-# Motor inteligente com 4 estratégias, G1, Empate Protegido e 30 ciclos
+# Motor inteligente com estratégias de elite, G1, Sem Empate e ciclos otimizados
 # =====================================================
 
 TOKEN = os.getenv(
@@ -30,7 +30,7 @@ PROTECAO_T = 0
 JANELA = 10
 LIMITE_LOSSES = 2
 
-# Ajustado para 30 simulações de arranque rápido, Zé!
+# Ajustado para 15 simulações de arranque, Zé!
 MIN_PAPER = 15
 MIN_RECENTES = 15
 
@@ -80,6 +80,7 @@ def nova_sessao():
         # Estatísticas individuais por estratégia
         "strategy_stats": {
             "quebra_sequencia": {"wins": 0, "losses": 0, "signals": 0},
+            "inercia_tendencia": {"wins": 0, "losses": 0, "signals": 0},
             "reversao_desequilibrio": {"wins": 0, "losses": 0, "signals": 0}
         },
 
@@ -96,7 +97,7 @@ def nova_sessao():
 
 
 # =====================================================
-# CÉREBRO MULTIESTRATÉGIA (4 ESTRATÉGIAS INDEPENDENTES)
+# CÉREBRO MULTIESTRATÉGIA (DUPLA CONCORDÂNCIA DE ELITE)
 # =====================================================
 
 def multi_strategy_brain(history):
@@ -107,6 +108,7 @@ def multi_strategy_brain(history):
     if len(puros) < 20:
         return None
 
+    ultimos_6 = puros[-6:]
     ultimos_10 = puros[-10:]
     ultimos_20 = puros[-20:]
 
@@ -124,8 +126,23 @@ def multi_strategy_brain(history):
         })
 
     # -------------------------------------------------
-    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG) [REMOVIDA]
+    # ESTRATÉGIA 2 — INÉRCIA DE TENDÊNCIA / BLOCO (Substituta do Ping-Pong)
     # -------------------------------------------------
+    cnt_a_6 = ultimos_6.count("A")
+    cnt_v_6 = ultimos_6.count("V")
+    
+    if cnt_a_6 >= 4 and puros[-1] == "A":
+        sinais.append({
+            "color": "A",
+            "strategy": "inercia_tendencia",
+            "reason": f"Inércia de bloco forte a favor do Azul ({cnt_a_6}/6)"
+        })
+    elif cnt_v_6 >= 4 and puros[-1] == "V":
+        sinais.append({
+            "color": "V",
+            "strategy": "inercia_tendencia",
+            "reason": f"Inércia de bloco forte a favor do Vermelho ({cnt_v_6}/6)"
+        })
 
     # -------------------------------------------------
     # ESTRATÉGIA 3 — MAIORIA RECENTE (Filtro de Contexto)
