@@ -25,13 +25,13 @@ app = Flask(__name__)
 # CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO
 ENTRADA = 3
 GALE1 = 6
-PROTECAO_T = 1
+PROTECAO_T = 0
 
 JANELA = 10
 LIMITE_LOSSES = 2
 
 # Ajustado para 30 simulações de arranque rápido, Zé!
-MIN_PAPER = 30
+MIN_PAPER = 15
 MIN_RECENTES = 15
 
 # Sessões em memória por chat
@@ -80,7 +80,6 @@ def nova_sessao():
         # Estatísticas individuais por estratégia
         "strategy_stats": {
             "quebra_sequencia": {"wins": 0, "losses": 0, "signals": 0},
-            "alternancia": {"wins": 0, "losses": 0, "signals": 0},
             "reversao_desequilibrio": {"wins": 0, "losses": 0, "signals": 0}
         },
 
@@ -125,18 +124,8 @@ def multi_strategy_brain(history):
         })
 
     # -------------------------------------------------
-    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG)
+    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG) [REMOVIDA]
     # -------------------------------------------------
-    if len(puros) >= 4:
-        if (puros[-1] != puros[-2] and 
-            puros[-2] != puros[-3] and 
-            puros[-3] != puros[-4]):
-            direcao_alt = "V" if puros[-1] == "A" else "A"
-            sinais.append({
-                "color": direcao_alt,
-                "strategy": "alternancia",
-                "reason": "Padrão de alternância regular detetado"
-            })
 
     # -------------------------------------------------
     # ESTRATÉGIA 3 — MAIORIA RECENTE (Filtro de Contexto)
