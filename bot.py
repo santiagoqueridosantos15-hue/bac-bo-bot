@@ -76,10 +76,9 @@ def nova_sessao():
         "paper_results": [],
         "paper_ties": 0,
 
-        # Estatísticas individuais por estratégia
+        # Estatísticas individuais por estratégia (Alternância removida dos registos ativos)
         "strategy_stats": {
             "quebra_sequencia": {"wins": 0, "losses": 0, "signals": 0},
-            "alternancia": {"wins": 0, "losses": 0, "signals": 0},
             "reversao_desequilibrio": {"wins": 0, "losses": 0, "signals": 0}
         },
 
@@ -96,7 +95,7 @@ def nova_sessao():
 
 
 # =====================================================
-# CÉREBRO MULTIESTRATÉGIA (4 ESTRATÉGIAS INDEPENDENTES)
+# CÉREBRO MULTIESTRATÉGIA (QUEBRA DE SEQUÊNCIA COM APOIO OCULTO DA ALTERNÂNCIA)
 # =====================================================
 
 def multi_strategy_brain(history):
@@ -112,29 +111,32 @@ def multi_strategy_brain(history):
 
     sinais = []
 
-    # -------------------------------------------------
-    # ESTRATÉGIA 1 — QUEBRA DE SEQUÊNCIA
-    # -------------------------------------------------
-    if len(puros) >= 3 and puros[-1] != puros[-2] and puros[-2] == puros[-3]:
-        direcao_quebra = puros[-1]
-        sinais.append({
-            "color": direcao_quebra,
-            "strategy": "quebra_sequencia",
-            "reason": f"Quebra de sequência confirmada para {direcao_quebra}"
-        })
-
-    # -------------------------------------------------
-    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG)
-    # -------------------------------------------------
+    # Variável auxiliar para detetar alternância em background (apenas para concordar, sem nunca comandar)
+    alternancia_valida = False
+    direcao_alt = None
     if len(puros) >= 4:
         if (puros[-1] != puros[-2] and 
             puros[-2] != puros[-3] and 
             puros[-3] != puros[-4]):
+            alternancia_valida = True
             direcao_alt = "V" if puros[-1] == "A" else "A"
+
+    # -------------------------------------------------
+    # ESTRATÉGIA 1 — QUEBRA DE SEQUÊNCIA (A Única Comandante Autorizada)
+    # -------------------------------------------------
+    if len(puros) >= 3 and puros[-1] != puros[-2] and puros[-2] == puros[-3]:
+        direcao_quebra = puros[-1]
+        
+        # Se a alternância estiver ativa, exigimos que ela aponte para o mesmo lado para dar força extra
+        if not alternancia_valida or direcao_alt == direcao_quebra:
+            motivo = f"Quebra de sequência confirmada para {direcao_quebra}"
+            if alternancia_valida and direcao_alt == direcao_quebra:
+                motivo += " + Apoio de alternância"
+
             sinais.append({
-                "color": direcao_alt,
-                "strategy": "alternancia",
-                "reason": "Padrão de alternância regular detetado"
+                "color": direcao_quebra,
+                "strategy": "quebra_sequencia",
+                "reason": motivo
             })
 
     # -------------------------------------------------
@@ -168,7 +170,7 @@ def multi_strategy_brain(history):
         })
 
     # =================================================
-    # SISTEMA DE DECISÃO E CONCORDÂNCIA
+    # SISTEMA DE DECISÃO
     # =================================================
     if not sinais:
         return None
@@ -184,13 +186,12 @@ def multi_strategy_brain(history):
     if contexto_forte and contexto_forte != direcao_unanime and len(sinais_validos) < 2:
         return None
 
-    if len(sinais_validos) >= 2 or (len(sinais_validos) == 1 and contexto_forte == direcao_unanime):
-        estrategias_nomes = "+".join([s["strategy"] for s in sinais_validos])
-        razoes = " | ".join([s["reason"] for s in sinais_validos])
+    if len(sinais_validos) >= 1:
+        s = sinais_validos[0]
         return {
-            "color": direcao_unanime,
-            "strategy": estrategias_nomes,
-            "reason": razoes
+            "color": s["color"],
+            "strategy": s["strategy"],
+            "reason": s["reason"]
         }
 
     return None
