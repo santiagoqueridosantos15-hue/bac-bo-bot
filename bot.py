@@ -8,7 +8,7 @@ from flask import Flask
 
 # =====================================================
 # BAC BO - ULTIMATE MULTISTRATEGY BRAIN
-# Motor inteligente com estratégias de elite, G1, Sem Empate e ciclos otimizados
+# Motor inteligente com 4 estratégias, G1 e Foco Exclusivo nas Cores
 # =====================================================
 
 TOKEN = os.getenv(
@@ -25,12 +25,11 @@ app = Flask(__name__)
 # CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO
 ENTRADA = 3
 GALE1 = 6
-PROTECAO_T = 0
 
 JANELA = 10
 LIMITE_LOSSES = 2
 
-# Ajustado para 15 simulações de arranque, Zé!
+# Ajustado para 15 simulações de arranque rápido, Zé!
 MIN_PAPER = 15
 MIN_RECENTES = 15
 
@@ -80,7 +79,7 @@ def nova_sessao():
         # Estatísticas individuais por estratégia
         "strategy_stats": {
             "quebra_sequencia": {"wins": 0, "losses": 0, "signals": 0},
-            "inercia_tendencia": {"wins": 0, "losses": 0, "signals": 0},
+            "alternancia": {"wins": 0, "losses": 0, "signals": 0},
             "reversao_desequilibrio": {"wins": 0, "losses": 0, "signals": 0}
         },
 
@@ -97,7 +96,7 @@ def nova_sessao():
 
 
 # =====================================================
-# CÉREBRO MULTIESTRATÉGIA (DUPLA CONCORDÂNCIA DE ELITE)
+# CÉREBRO MULTIESTRATÉGIA (4 ESTRATÉGIAS INDEPENDENTES)
 # =====================================================
 
 def multi_strategy_brain(history):
@@ -108,7 +107,6 @@ def multi_strategy_brain(history):
     if len(puros) < 20:
         return None
 
-    ultimos_6 = puros[-6:]
     ultimos_10 = puros[-10:]
     ultimos_20 = puros[-20:]
 
@@ -126,23 +124,18 @@ def multi_strategy_brain(history):
         })
 
     # -------------------------------------------------
-    # ESTRATÉGIA 2 — INÉRCIA DE TENDÊNCIA / BLOCO (Substituta do Ping-Pong)
+    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG)
     # -------------------------------------------------
-    cnt_a_6 = ultimos_6.count("A")
-    cnt_v_6 = ultimos_6.count("V")
-    
-    if cnt_a_6 >= 4 and puros[-1] == "A":
-        sinais.append({
-            "color": "A",
-            "strategy": "inercia_tendencia",
-            "reason": f"Inércia de bloco forte a favor do Azul ({cnt_a_6}/6)"
-        })
-    elif cnt_v_6 >= 4 and puros[-1] == "V":
-        sinais.append({
-            "color": "V",
-            "strategy": "inercia_tendencia",
-            "reason": f"Inércia de bloco forte a favor do Vermelho ({cnt_v_6}/6)"
-        })
+    if len(puros) >= 4:
+        if (puros[-1] != puros[-2] and 
+            puros[-2] != puros[-3] and 
+            puros[-3] != puros[-4]):
+            direcao_alt = "V" if puros[-1] == "A" else "A"
+            sinais.append({
+                "color": direcao_alt,
+                "strategy": "alternancia",
+                "reason": "Padrão de alternância regular detetado"
+            })
 
     # -------------------------------------------------
     # ESTRATÉGIA 3 — MAIORIA RECENTE (Filtro de Contexto)
@@ -268,7 +261,7 @@ def brain_status(session):
 
 
 # =====================================================
-# AVALIAÇÃO DE SIMULAÇÃO (PAPEL COM G1 E EMPATE PROTEGIDO VENCEDOR)
+# AVALIAÇÃO DE SIMULAÇÃO (PAPEL COM G1)
 # =====================================================
 
 def evaluate_paper(session, real_result):
@@ -333,7 +326,7 @@ def evaluate_paper(session, real_result):
 
 
 # =====================================================
-# GESTÃO DAS OPERAÇÕES REAIS (COM LUCRO NA PROTEÇÃO DE EMPATE)
+# GESTÃO DAS OPERAÇÕES REAIS (EXCLUSIVAMENTE NA COR)
 # =====================================================
 
 def close_cycle(session):
@@ -346,15 +339,14 @@ def process_live_bet(chat_id, session, result):
     if target is None:
         return
 
-    # EMPATE (T) - Proteção paga lucro líquido de 4x na ficha de T!
+    # EMPATE (T) - Conta como empate estatístico e encerra o ciclo limpo
     if result == "T":
         session["stats"]["ties"] += 1
         close_cycle(session)
         bot.send_message(
             chat_id,
             "🟡 *RESULTADO EMPATE (T)*\n\n"
-            "Aposta principal devolvida e **Proteção T vencedora com lucro líquido**! ✨💰\n"
-            "Ciclo encerrado com sucesso.",
+            "Saiu Empate. Ciclo encerrado sem prejuízo na cor.",
             parse_mode="Markdown"
         )
         return
@@ -391,8 +383,7 @@ def process_live_bet(chat_id, session, result):
             "🔴 *LOSS NA ENTRADA PRINCIPAL*\n\n"
             "🔄 **GALE 1 (G1) OBRIGATÓRIO** 🚨\n\n"
             f"👉 Direção: {cor_nome}\n"
-            f"💰 Aposta G1: {GALE1}€\n"
-            f"🟡 Proteção T: {PROTECAO_T}€\n\n"
+            f"💰 Aposta G1: {GALE1}€\n\n"
             "Sem Gale 2.",
             parse_mode="Markdown"
         )
@@ -457,8 +448,7 @@ def generate_decision(chat_id, session):
         "🧠 *MULTISTRATEGY BRAIN*\n\n"
         "📊 FILTRO ESTATÍSTICO APROVADO\n\n"
         f"🎯 Direção: {cor_nome}\n"
-        f"💰 Entrada: {ENTRADA}€\n"
-        f"🟡 Proteção T: {PROTECAO_T}€\n\n"
+        f"💰 Entrada: {ENTRADA}€\n\n"
         f"🔎 Estratégia(s): {candidate['strategy']}\n"
         f"💡 Motivo: {candidate['reason']}\n\n"
         "⚠️ Critérios experimentais cumpridos.",
@@ -492,12 +482,12 @@ def start(message):
     bot.reply_to(
         message,
         "🤖 *BAC BO - MULTISTRATEGY BRAIN*\n\n"
-        "Sistema otimizado com calibração de 30 ciclos, G1 e Empate Protegido Lucrativo!\n\n"
+        "Sistema otimizado com calibração de 15 ciclos, G1 e Operações Exclusivas na Cor!\n\n"
         "📊 Envia as tuas 10 jogadas iniciais.\n\n"
         "Exemplo:\n"
         "`A V A A V T V A V V`\n\n"
         "🔵 A = Azul | 🔴 V = Vermelho | 🟡 T = Empate\n\n"
-        "💰 Entrada: 3€ | 🔄 G1: 6€ | 🛡️ Proteção T: 1€\n"
+        "💰 Entrada: 3€ | 🔄 G1: 6€\n"
         "🚨 Máximo: 2 perdas finais\n\n"
         "/stats - Estatísticas detalhadas\n"
         "/status - Estado do cérebro\n"
@@ -515,7 +505,7 @@ def help_command(message):
         "1. Utiliza /start.\n"
         "2. Envia exatamente 10 jogadas iniciais.\n"
         "3. Depois envia apenas uma jogada de cada vez.\n"
-        "4. O cérebro avalia as 4 estratégias após cada resultado.\n\n"
+        "4. O cérebro avalia as estratégias após cada resultado.\n\n"
         "A = Azul | V = Vermelho | T = Empate",
         parse_mode="Markdown"
     )
@@ -575,7 +565,7 @@ def stats_command(message):
         "OPERAÇÕES REAIS\n"
         f"🟢 Greens: {st['wins']} (G1: {st['wins_g1']})\n"
         f"🔴 Perdas finais: {st['losses']}/{LIMITE_LOSSES}\n"
-        f"🟡 Empates (Proteção Lucrativa): {st['ties']}\n"
+        f"🟡 Empates detetados: {st['ties']}\n"
         f"🎯 Entradas: {st['entries']}\n"
         f"📈 Taxa de acerto real: {rate:.2f}%\n\n"
         f"SIMULAÇÃO / PAPEL (Alvo: {MIN_PAPER} ciclos)\n"
