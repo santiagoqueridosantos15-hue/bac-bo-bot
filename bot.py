@@ -96,7 +96,7 @@ def nova_sessao():
 
 
 # =====================================================
-# CÉREBRO MULTIESTRATÉGIA (4 ESTRATÉGIAS INDEPENDENTES)
+# CÉREBRO MULTIESTRATÉGIA (4 FATORES / MAIORIA OBRIGATÓRIA)
 # =====================================================
 
 def multi_strategy_brain(history):
@@ -109,37 +109,58 @@ def multi_strategy_brain(history):
 
     ultimos_10 = puros[-10:]
     ultimos_20 = puros[-20:]
+    ultimos_6 = puros[-6:]
+    ultimos_8 = puros[-8:]
 
-    sinais = []
-
-    # -------------------------------------------------
-    # ESTRATÉGIA 1 — QUEBRA DE SEQUÊNCIA
-    # -------------------------------------------------
+    # FATOR 1 — QUEBRA DE SEQUÊNCIA (Base obrigatória para disparo)
+    quebra_cor = None
     if len(puros) >= 3 and puros[-1] != puros[-2] and puros[-2] == puros[-3]:
-        direcao_quebra = puros[-1]
-        sinais.append({
-            "color": direcao_quebra,
-            "strategy": "quebra_sequencia",
-            "reason": f"Quebra de sequência confirmada para {direcao_quebra}"
-        })
+        quebra_cor = puros[-1]
 
-    # -------------------------------------------------
-    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG) [APENAS PARA CONCORDAR COM QUEBRA]
-    # -------------------------------------------------
+    if not quebra_cor:
+        return None
+
+    fatores_a_favor = []
+    razoes = []
+
+    # Fator 1 confirmado
+    fatores_a_favor.append("quebra_sequencia")
+    razoes.append(f"Quebra de sequência confirmada para {quebra_cor}")
+
+    # FATOR 2 — ALTERNÂNCIA (PING-PONG) [Apenas apoio/concordância]
     if len(puros) >= 4:
-        if (puros[-1] != puros[-2] and 
-            puros[-2] != puros[-3] and 
+        if (puros[-1] != puros[-2] and
+            puros[-2] != puros[-3] and
             puros[-3] != puros[-4]):
             direcao_alt = "V" if puros[-1] == "A" else "A"
-            sinais.append({
-                "color": direcao_alt,
-                "strategy": "alternancia",
-                "reason": "Padrão de alternância regular detetado"
-            })
+            if direcao_alt == quebra_cor:
+                fatores_a_favor.append("alternancia")
+                razoes.append("Padrão de alternância regular detetado")
 
-    # -------------------------------------------------
-    # ESTRATÉGIA 3 — MAIORIA RECENTE (Filtro de Contexto)
-    # -------------------------------------------------
+    # FATOR 3 — PRESSÃO DE RITMO CURTO (Maioria nas últimas 6 jogadas puras)
+    if ultimos_6.count(quebra_cor) >= 4 and puros[-1] == quebra_cor:
+        fatores_a_favor.append("pressao_ritmo")
+        razoes.append(f"Pressão de ritmo nas últimas 6 ({ultimos_6.count(quebra_cor)}/6)")
+
+    # FATOR 4 — FORÇA / REVERSÃO DE CONTEXTO (Desequilíbrio ou domínio curto)
+    cnt_a_20 = ultimos_20.count("A")
+    cnt_v_20 = ultimos_20.count("V")
+    fator_4_ok = False
+
+    if quebra_cor == "V" and cnt_a_20 >= 14 and puros[-2] == "V":
+        fator_4_ok = True
+        razoes.append(f"Reversão após desequilíbrio massivo ({cnt_a_20} Azuis em 20)")
+    elif quebra_cor == "A" and cnt_v_20 >= 14 and puros[-2] == "A":
+        fator_4_ok = True
+        razoes.append(f"Reversão após desequilíbrio massivo ({cnt_v_20} Vermelhos em 20)")
+    elif ultimos_8.count(quebra_cor) >= 5:
+        fator_4_ok = True
+        razoes.append(f"Domínio consistente nas últimas 8 ({ultimos_8.count(quebra_cor)}/8)")
+
+    if fator_4_ok:
+        fatores_a_favor.append("contexto_forca")
+
+    # Filtro de contexto forte contrário (mantido)
     cnt_a_10 = ultimos_10.count("A")
     cnt_v_10 = ultimos_10.count("V")
     contexto_forte = None
@@ -148,78 +169,15 @@ def multi_strategy_brain(history):
     elif cnt_v_10 >= 7:
         contexto_forte = "V"
 
-    # -------------------------------------------------
-    # FATOR EXTRA DE CONCORDÂNCIA — PRESSÃO DE RITMO (Últimas 5 jogadas)
-    # -------------------------------------------------
-    ultimos_5 = puros[-5:]
-    pressao_ritmo = None
-    if ultimos_5.count("A") >= 3 and puros[-1] == "A":
-        pressao_ritmo = "A"
-    elif ultimos_5.count("V") >= 3 and puros[-1] == "V":
-        pressao_ritmo = "V"
-
-    # -------------------------------------------------
-    # ESTRATÉGIA 4 — REVERSÃO APÓS DESEQUILÍBRIO
-    # -------------------------------------------------
-    cnt_a_20 = ultimos_20.count("A")
-    cnt_v_20 = ultimos_20.count("V")
-
-    if cnt_a_20 >= 14 and puros[-1] == "V" and puros[-2] == "V":
-        sinais.append({
-            "color": "V",
-            "strategy": "reversao_desequilibrio",
-            "reason": f"Reversão após desequilíbrio massivo ({cnt_a_20} Azuis em 20)"
-        })
-    elif cnt_v_20 >= 14 and puros[-1] == "A" and puros[-2] == "A":
-        sinais.append({
-            "color": "A",
-            "strategy": "reversao_desequilibrio",
-            "reason": f"Reversão após desequilíbrio massivo ({cnt_v_20} Vermelhos em 20)"
-        })
-
-    # =================================================
-    # SISTEMA DE DECISÃO E CONCORDÂNCIA
-    # =================================================
-    if not sinais:
+    if contexto_forte and contexto_forte != quebra_cor and len(fatores_a_favor) < 4:
         return None
 
-    direcoes = [s["color"] for s in sinais]
-    
-    if len(set(direcoes)) > 1:
-        return None
-
-    direcao_unanime = direcoes[0]
-    sinais_validos = [s for s in sinais if s["color"] == direcao_unanime]
-    nomes_ativos = [s["strategy"] for s in sinais_validos]
-
-    # PROIBIÇÃO: O ping-pong (alternancia) NUNCA pode gerar entrada se não houver quebra_sequencia
-    if "alternancia" in nomes_ativos and "quebra_sequencia" not in nomes_ativos:
-        return None
-
-    if contexto_forte and contexto_forte != direcao_unanime and len(sinais_validos) < 2:
-        return None
-
-    # Dispara se:
-    # 1) Duas ou mais estratégias concordarem (ex: quebra_sequencia + alternancia)
-    # 2) Ou uma estratégia (quebra_sequencia / reversao) concordar com contexto_forte ou pressao_ritmo
-    if (
-        len(sinais_validos) >= 2
-        or (len(sinais_validos) == 1 and (contexto_forte == direcao_unanime or pressao_ritmo == direcao_unanime))
-    ):
-        # Quando entra com quebra_sequencia + alternancia, regista sob quebra_sequencia para não poluir stats com ping-pong
-        if "quebra_sequencia" in nomes_ativos:
-            estrategia_principal = "quebra_sequencia"
-        else:
-            estrategia_principal = "+".join(nomes_ativos)
-
-        razoes = " | ".join([s["reason"] for s in sinais_validos])
-        if pressao_ritmo == direcao_unanime and len(sinais_validos) == 1:
-            razoes += f" | Pressão de ritmo confirmada ({direcao_unanime})"
-
+    # MAIORIA DOS 4 FATORES: Pelo menos 3 em 4 têm de concordar!
+    if len(fatores_a_favor) >= 3:
         return {
-            "color": direcao_unanime,
-            "strategy": estrategia_principal,
-            "reason": razoes
+            "color": quebra_cor,
+            "strategy": "quebra_sequencia",
+            "reason": " | ".join(razoes)
         }
 
     return None
