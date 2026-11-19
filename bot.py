@@ -8,7 +8,7 @@ from flask import Flask
 
 # =====================================================
 # BAC BO - ULTIMATE MULTISTRATEGY BRAIN
-# Motor inteligente com 4 estratégias, G1 e Foco Exclusivo nas Cores
+# Motor inteligente com 4 estratégias, G1, Empate Protegido e 30 ciclos
 # =====================================================
 
 TOKEN = os.getenv(
@@ -29,9 +29,9 @@ GALE1 = 6
 JANELA = 10
 LIMITE_LOSSES = 2
 
-# Ajustado para 15 simulações de arranque rápido, Zé!
-MIN_PAPER = 15
-MIN_RECENTES = 15
+# Ajustado para 10 simulações de arranque rápido, Zé!
+MIN_PAPER = 10
+MIN_RECENTES = 10
 
 # Sessões em memória por chat
 sessions = {}
@@ -96,7 +96,7 @@ def nova_sessao():
 
 
 # =====================================================
-# CÉREBRO MULTIESTRATÉGIA (CONCORDÂNCIA OBRIGATÓRIA SEM SOLO DA ALTERNÂNCIA)
+# CÉREBRO MULTIESTRATÉGIA (4 ESTRATÉGIAS INDEPENDENTES)
 # =====================================================
 
 def multi_strategy_brain(history):
@@ -124,7 +124,7 @@ def multi_strategy_brain(history):
         })
 
     # -------------------------------------------------
-    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG) [APENAS PARA APOIO, PROIBIDA DE OPERAR SOZINHA]
+    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG) [APENAS PARA CONCORDAR COM QUEBRA]
     # -------------------------------------------------
     if len(puros) >= 4:
         if (puros[-1] != puros[-2] and 
@@ -147,6 +147,16 @@ def multi_strategy_brain(history):
         contexto_forte = "A"
     elif cnt_v_10 >= 7:
         contexto_forte = "V"
+
+    # -------------------------------------------------
+    # FATOR EXTRA DE CONCORDÂNCIA — PRESSÃO DE RITMO (Últimas 5 jogadas)
+    # -------------------------------------------------
+    ultimos_5 = puros[-5:]
+    pressao_ritmo = None
+    if ultimos_5.count("A") >= 3 and puros[-1] == "A":
+        pressao_ritmo = "A"
+    elif ultimos_5.count("V") >= 3 and puros[-1] == "V":
+        pressao_ritmo = "V"
 
     # -------------------------------------------------
     # ESTRATÉGIA 4 — REVERSÃO APÓS DESEQUILÍBRIO
@@ -180,21 +190,35 @@ def multi_strategy_brain(history):
 
     direcao_unanime = direcoes[0]
     sinais_validos = [s for s in sinais if s["color"] == direcao_unanime]
+    nomes_ativos = [s["strategy"] for s in sinais_validos]
 
-    # PROIBIÇÃO ABSOLUTA: A alternância nunca pode mandar um sinal sozinha!
-    estrategias_ativas = [s["strategy"] for s in sinais_validos]
-    if "alternancia" in estrategias_ativas and "quebra_sequencia" not in estrategias_ativas and len(estrategias_ativas) == 1:
+    # PROIBIÇÃO: O ping-pong (alternancia) NUNCA pode gerar entrada se não houver quebra_sequencia
+    if "alternancia" in nomes_ativos and "quebra_sequencia" not in nomes_ativos:
         return None
 
     if contexto_forte and contexto_forte != direcao_unanime and len(sinais_validos) < 2:
         return None
 
-    if len(sinais_validos) >= 2 or (len(sinais_validos) == 1 and contexto_forte == direcao_unanime):
-        estrategias_nomes = "+".join([s["strategy"] for s in sinais_validos])
+    # Dispara se:
+    # 1) Duas ou mais estratégias concordarem (ex: quebra_sequencia + alternancia)
+    # 2) Ou uma estratégia (quebra_sequencia / reversao) concordar com contexto_forte ou pressao_ritmo
+    if (
+        len(sinais_validos) >= 2
+        or (len(sinais_validos) == 1 and (contexto_forte == direcao_unanime or pressao_ritmo == direcao_unanime))
+    ):
+        # Quando entra com quebra_sequencia + alternancia, regista sob quebra_sequencia para não poluir stats com ping-pong
+        if "quebra_sequencia" in nomes_ativos:
+            estrategia_principal = "quebra_sequencia"
+        else:
+            estrategia_principal = "+".join(nomes_ativos)
+
         razoes = " | ".join([s["reason"] for s in sinais_validos])
+        if pressao_ritmo == direcao_unanime and len(sinais_validos) == 1:
+            razoes += f" | Pressão de ritmo confirmada ({direcao_unanime})"
+
         return {
             "color": direcao_unanime,
-            "strategy": estrategias_nomes,
+            "strategy": estrategia_principal,
             "reason": razoes
         }
 
@@ -266,7 +290,7 @@ def brain_status(session):
 
 
 # =====================================================
-# AVALIAÇÃO DE SIMULAÇÃO (PAPEL COM G1)
+# AVALIAÇÃO DE SIMULAÇÃO (PAPEL COM G1 E EMPATE PROTEGIDO VENCEDOR)
 # =====================================================
 
 def evaluate_paper(session, real_result):
@@ -331,7 +355,7 @@ def evaluate_paper(session, real_result):
 
 
 # =====================================================
-# GESTÃO DAS OPERAÇÕES REAIS (EXCLUSIVAMENTE NA COR)
+# GESTÃO DAS OPERAÇÕES REAIS (APENAS NA COR)
 # =====================================================
 
 def close_cycle(session):
@@ -344,14 +368,14 @@ def process_live_bet(chat_id, session, result):
     if target is None:
         return
 
-    # EMPATE (T) - Conta como empate estatístico e encerra o ciclo limpo
+    # EMPATE (T)
     if result == "T":
         session["stats"]["ties"] += 1
         close_cycle(session)
         bot.send_message(
             chat_id,
             "🟡 *RESULTADO EMPATE (T)*\n\n"
-            "Saiu Empate. Ciclo encerrado sem prejuízo na cor.",
+            "Ciclo encerrado.",
             parse_mode="Markdown"
         )
         return
@@ -487,7 +511,7 @@ def start(message):
     bot.reply_to(
         message,
         "🤖 *BAC BO - MULTISTRATEGY BRAIN*\n\n"
-        "Sistema otimizado com calibração de 15 ciclos, G1 e Operações Exclusivas na Cor!\n\n"
+        "Sistema otimizado com calibração de 10 ciclos e G1!\n\n"
         "📊 Envia as tuas 10 jogadas iniciais.\n\n"
         "Exemplo:\n"
         "`A V A A V T V A V V`\n\n"
@@ -510,7 +534,7 @@ def help_command(message):
         "1. Utiliza /start.\n"
         "2. Envia exatamente 10 jogadas iniciais.\n"
         "3. Depois envia apenas uma jogada de cada vez.\n"
-        "4. O cérebro avalia as estratégias após cada resultado.\n\n"
+        "4. O cérebro avalia as 4 estratégias após cada resultado.\n\n"
         "A = Azul | V = Vermelho | T = Empate",
         parse_mode="Markdown"
     )
@@ -570,7 +594,7 @@ def stats_command(message):
         "OPERAÇÕES REAIS\n"
         f"🟢 Greens: {st['wins']} (G1: {st['wins_g1']})\n"
         f"🔴 Perdas finais: {st['losses']}/{LIMITE_LOSSES}\n"
-        f"🟡 Empates detetados: {st['ties']}\n"
+        f"🟡 Empates: {st['ties']}\n"
         f"🎯 Entradas: {st['entries']}\n"
         f"📈 Taxa de acerto real: {rate:.2f}%\n\n"
         f"SIMULAÇÃO / PAPEL (Alvo: {MIN_PAPER} ciclos)\n"
