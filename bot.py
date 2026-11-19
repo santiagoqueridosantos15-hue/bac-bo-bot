@@ -76,9 +76,10 @@ def nova_sessao():
         "paper_results": [],
         "paper_ties": 0,
 
-        # Estatísticas individuais por estratégia (Alternância removida dos registos ativos)
+        # Estatísticas individuais por estratégia
         "strategy_stats": {
             "quebra_sequencia": {"wins": 0, "losses": 0, "signals": 0},
+            "alternancia": {"wins": 0, "losses": 0, "signals": 0},
             "reversao_desequilibrio": {"wins": 0, "losses": 0, "signals": 0}
         },
 
@@ -95,7 +96,7 @@ def nova_sessao():
 
 
 # =====================================================
-# CÉREBRO MULTIESTRATÉGIA (QUEBRA DE SEQUÊNCIA COM APOIO OCULTO DA ALTERNÂNCIA)
+# CÉREBRO MULTIESTRATÉGIA (CONCORDÂNCIA OBRIGATÓRIA SEM SOLO DA ALTERNÂNCIA)
 # =====================================================
 
 def multi_strategy_brain(history):
@@ -111,32 +112,29 @@ def multi_strategy_brain(history):
 
     sinais = []
 
-    # Variável auxiliar para detetar alternância em background (apenas para concordar, sem nunca comandar)
-    alternancia_valida = False
-    direcao_alt = None
+    # -------------------------------------------------
+    # ESTRATÉGIA 1 — QUEBRA DE SEQUÊNCIA
+    # -------------------------------------------------
+    if len(puros) >= 3 and puros[-1] != puros[-2] and puros[-2] == puros[-3]:
+        direcao_quebra = puros[-1]
+        sinais.append({
+            "color": direcao_quebra,
+            "strategy": "quebra_sequencia",
+            "reason": f"Quebra de sequência confirmada para {direcao_quebra}"
+        })
+
+    # -------------------------------------------------
+    # ESTRATÉGIA 2 — ALTERNÂNCIA (PING-PONG) [APENAS PARA APOIO, PROIBIDA DE OPERAR SOZINHA]
+    # -------------------------------------------------
     if len(puros) >= 4:
         if (puros[-1] != puros[-2] and 
             puros[-2] != puros[-3] and 
             puros[-3] != puros[-4]):
-            alternancia_valida = True
             direcao_alt = "V" if puros[-1] == "A" else "A"
-
-    # -------------------------------------------------
-    # ESTRATÉGIA 1 — QUEBRA DE SEQUÊNCIA (A Única Comandante Autorizada)
-    # -------------------------------------------------
-    if len(puros) >= 3 and puros[-1] != puros[-2] and puros[-2] == puros[-3]:
-        direcao_quebra = puros[-1]
-        
-        # Se a alternância estiver ativa, exigimos que ela aponte para o mesmo lado para dar força extra
-        if not alternancia_valida or direcao_alt == direcao_quebra:
-            motivo = f"Quebra de sequência confirmada para {direcao_quebra}"
-            if alternancia_valida and direcao_alt == direcao_quebra:
-                motivo += " + Apoio de alternância"
-
             sinais.append({
-                "color": direcao_quebra,
-                "strategy": "quebra_sequencia",
-                "reason": motivo
+                "color": direcao_alt,
+                "strategy": "alternancia",
+                "reason": "Padrão de alternância regular detetado"
             })
 
     # -------------------------------------------------
@@ -170,7 +168,7 @@ def multi_strategy_brain(history):
         })
 
     # =================================================
-    # SISTEMA DE DECISÃO
+    # SISTEMA DE DECISÃO E CONCORDÂNCIA
     # =================================================
     if not sinais:
         return None
@@ -183,15 +181,21 @@ def multi_strategy_brain(history):
     direcao_unanime = direcoes[0]
     sinais_validos = [s for s in sinais if s["color"] == direcao_unanime]
 
+    # PROIBIÇÃO ABSOLUTA: A alternância nunca pode mandar um sinal sozinha!
+    estrategias_ativas = [s["strategy"] for s in sinais_validos]
+    if "alternancia" in estrategias_ativas and "quebra_sequencia" not in estrategias_ativas and len(estrategias_ativas) == 1:
+        return None
+
     if contexto_forte and contexto_forte != direcao_unanime and len(sinais_validos) < 2:
         return None
 
-    if len(sinais_validos) >= 1:
-        s = sinais_validos[0]
+    if len(sinais_validos) >= 2 or (len(sinais_validos) == 1 and contexto_forte == direcao_unanime):
+        estrategias_nomes = "+".join([s["strategy"] for s in sinais_validos])
+        razoes = " | ".join([s["reason"] for s in sinais_validos])
         return {
-            "color": s["color"],
-            "strategy": s["strategy"],
-            "reason": s["reason"]
+            "color": direcao_unanime,
+            "strategy": estrategias_nomes,
+            "reason": razoes
         }
 
     return None
