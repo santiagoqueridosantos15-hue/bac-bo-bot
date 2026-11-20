@@ -7,13 +7,13 @@ import telebot
 from flask import Flask
 
 # =====================================================
-# BAC BO - ULTIMATE MULTISTRATEGY BRAIN
-# Motor inteligente com 4 estratégias, G1, Empate Protegido e 30 ciclos
+# ROULETTE COLUMNS - MULTISTRATEGY BRAIN
+# Motor de 2 Colunas (1ª e 2ª / 1ª e 3ª), Martingale Sprint até G1, Sem Proteção no 0
 # =====================================================
 
 TOKEN = os.getenv(
     "BOT_TOKEN",
-    "8922303337:AAEfiGQK15Cd4B4SsW-FS97Fq6QyPH2aUEs"  # O teu token integrado, Zé!
+    "8922303337:AAEfiGQK15Cd4B4SsW-FS97Fq6QyPH2aUEs"
 )
 
 if not TOKEN or TOKEN == "COLOCA_AQUI_O_TEU_TOKEN_NOVO":
@@ -22,16 +22,15 @@ if not TOKEN or TOKEN == "COLOCA_AQUI_O_TEU_TOKEN_NOVO":
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO
-ENTRADA = 3
-GALE1 = 6
+# CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO (POR CADA COLUNA DAS 2 ESCOLHIDAS)
+ENTRADA_COLUNA = 3      # Ex: 3€ na 1ª coluna + 3€ na 2ª coluna (total 6€ na Entrada)
+GALE1_COLUNA = 6        # Ex: 6€ na 1ª coluna + 6€ na 2ª coluna (total 12€ no G1)
 
-JANELA = 10
-LIMITE_LOSSES = 2
+JANELA = 10             # Jogadas iniciais para arrancar
+LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 falhados)
 
-# Ajustado para 10 simulações de arranque rápido, Zé!
-MIN_PAPER = 10
-MIN_RECENTES = 10
+MIN_PAPER = 10          # Simulações mínimas em papel
+MIN_RECENTES = 10       # Janela recente para avaliação
 
 # Sessões em memória por chat
 sessions = {}
@@ -43,7 +42,7 @@ sessions = {}
 
 @app.route("/")
 def home():
-    return "BAC BO MULTISTRATEGY BRAIN - ONLINE 24/7, ZÉ!"
+    return "ROULETTE 2 COLUMNS BRAIN - ONLINE 24/7, ZÉ!"
 
 
 def run_web():
@@ -61,11 +60,11 @@ def run_web():
 
 def nova_sessao():
     return {
-        "history": [],
+        "history": [],          # Lista de números ("0" a "36") ou colunas ("C1", "C2", "C3", "Z")
         "awaiting_seed": True,
 
-        "active_target": None,
-        "gale": 0,
+        "active_cols": None,    # Ex: ("C1", "C2") ou ("C1", "C3")
+        "gale": 0,              # 0 = Entrada, 1 = Gale 1
         "blocked": False,
 
         # Fila de simulação em papel (suporta ciclo Entrada -> G1)
@@ -74,13 +73,13 @@ def nova_sessao():
 
         # Resultados globais da simulação em tempo real
         "paper_results": [],
-        "paper_ties": 0,
+        "paper_zeros": 0,
 
         # Estatísticas individuais por estratégia
         "strategy_stats": {
-            "quebra_sequencia": {"wins": 0, "losses": 0, "signals": 0},
-            "alternancia": {"wins": 0, "losses": 0, "signals": 0},
-            "reversao_desequilibrio": {"wins": 0, "losses": 0, "signals": 0}
+            "quebra_coluna": {"wins": 0, "losses": 0, "signals": 0},
+            "alternancia_colunas": {"wins": 0, "losses": 0, "signals": 0},
+            "atraso_coluna": {"wins": 0, "losses": 0, "signals": 0}
         },
 
         # Estatísticas gerais das operações reais
@@ -88,7 +87,7 @@ def nova_sessao():
             "wins": 0,
             "wins_g1": 0,
             "losses": 0,
-            "ties": 0,
+            "zeros": 0,
             "entries": 0,
             "observations": 0
         }
@@ -96,91 +95,157 @@ def nova_sessao():
 
 
 # =====================================================
-# CÉREBRO MULTIESTRATÉGIA (4 FATORES / MAIORIA OBRIGATÓRIA)
+# CONVERSÃO DE NÚMERO (0-36) PARA COLUNA (C1, C2, C3, Z)
 # =====================================================
 
-def multi_strategy_brain(history):
-    if len(history) < 20:
-        return None
+C1_NUMS = {1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34}
+C2_NUMS = {2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35}
+C3_NUMS = {3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36}
 
-    puros = [x for x in history if x in ("A", "V")]
-    if len(puros) < 20:
-        return None
 
-    ultimos_10 = puros[-10:]
-    ultimos_20 = puros[-20:]
-    ultimos_6 = puros[-6:]
-    ultimos_8 = puros[-8:]
+def parse_token_to_col(token):
+    t = token.strip().upper()
+    if t in ("C1", "1", "1A", "COL1"):
+        return "C1"
+    if t in ("C2", "2", "2A", "COL2"):
+        return "C2"
+    if t in ("C3", "3", "3A", "COL3"):
+        return "C3"
+    if t in ("Z", "0", "ZERO"):
+        return "Z"
 
-    # FATOR 1 — QUEBRA DE SEQUÊNCIA (Base obrigatória para disparo)
-    quebra_cor = None
-    if len(puros) >= 3 and puros[-1] != puros[-2] and puros[-2] == puros[-3]:
-        quebra_cor = puros[-1]
-
-    if not quebra_cor:
-        return None
-
-    fatores_a_favor = []
-    razoes = []
-
-    # Fator 1 confirmado
-    fatores_a_favor.append("quebra_sequencia")
-    razoes.append(f"Quebra de sequência confirmada para {quebra_cor}")
-
-    # FATOR 2 — ALTERNÂNCIA (PING-PONG) [Apenas apoio/concordância]
-    if len(puros) >= 4:
-        if (puros[-1] != puros[-2] and
-            puros[-2] != puros[-3] and
-            puros[-3] != puros[-4]):
-            direcao_alt = "V" if puros[-1] == "A" else "A"
-            if direcao_alt == quebra_cor:
-                fatores_a_favor.append("alternancia")
-                razoes.append("Padrão de alternância regular detetado")
-
-    # FATOR 3 — PRESSÃO DE RITMO CURTO (Maioria nas últimas 6 jogadas puras)
-    if ultimos_6.count(quebra_cor) >= 4 and puros[-1] == quebra_cor:
-        fatores_a_favor.append("pressao_ritmo")
-        razoes.append(f"Pressão de ritmo nas últimas 6 ({ultimos_6.count(quebra_cor)}/6)")
-
-    # FATOR 4 — FORÇA / REVERSÃO DE CONTEXTO (Desequilíbrio ou domínio curto)
-    cnt_a_20 = ultimos_20.count("A")
-    cnt_v_20 = ultimos_20.count("V")
-    fator_4_ok = False
-
-    if quebra_cor == "V" and cnt_a_20 >= 14 and puros[-2] == "V":
-        fator_4_ok = True
-        razoes.append(f"Reversão após desequilíbrio massivo ({cnt_a_20} Azuis em 20)")
-    elif quebra_cor == "A" and cnt_v_20 >= 14 and puros[-2] == "A":
-        fator_4_ok = True
-        razoes.append(f"Reversão após desequilíbrio massivo ({cnt_v_20} Vermelhos em 20)")
-    elif ultimos_8.count(quebra_cor) >= 5:
-        fator_4_ok = True
-        razoes.append(f"Domínio consistente nas últimas 8 ({ultimos_8.count(quebra_cor)}/8)")
-
-    if fator_4_ok:
-        fatores_a_favor.append("contexto_forca")
-
-    # Filtro de contexto forte contrário (mantido)
-    cnt_a_10 = ultimos_10.count("A")
-    cnt_v_10 = ultimos_10.count("V")
-    contexto_forte = None
-    if cnt_a_10 >= 7:
-        contexto_forte = "A"
-    elif cnt_v_10 >= 7:
-        contexto_forte = "V"
-
-    if contexto_forte and contexto_forte != quebra_cor and len(fatores_a_favor) < 4:
-        return None
-
-    # MAIORIA DOS 4 FATORES: Pelo menos 3 em 4 têm de concordar!
-    if len(fatores_a_favor) >= 3:
-        return {
-            "color": quebra_cor,
-            "strategy": "quebra_sequencia",
-            "reason": " | ".join(razoes)
-        }
-
+    if t.isdigit():
+        n = int(t)
+        if n == 0:
+            return "Z"
+        if n in C1_NUMS:
+            return "C1"
+        if n in C2_NUMS:
+            return "C2"
+        if n in C3_NUMS:
+            return "C3"
     return None
+
+
+def format_cols_nome(cols):
+    nomes = {
+        "C1": "1ª Coluna",
+        "C2": "2ª Coluna",
+        "C3": "3ª Coluna"
+    }
+    return f"{nomes[cols[0]]} e {nomes[cols[1]]}"
+
+
+def outras_duas_colunas(col_excluida):
+    # Devolve sempre um par válido de duas colunas ("C1","C2") ou ("C1","C3") ou ("C2","C3")
+    if col_excluida == "C3":
+        return ("C1", "C2")
+    if col_excluida == "C2":
+        return ("C1", "C3")
+    return ("C2", "C3")
+
+
+# =====================================================
+# CÉREBRO DE 2 COLUNAS (4 FATORES / MAIORIA DE CONCORDÂNCIA)
+# =====================================================
+
+def roulette_columns_brain(history):
+    cols_hist = [x for x in history if x in ("C1", "C2", "C3")]
+    if len(cols_hist) < 12:
+        return None
+
+    ult_6 = cols_hist[-6:]
+    ult_12 = cols_hist[-12:]
+
+    votos_pares = {}
+    razoes_por_par = {}
+
+    def adicionar_voto(par, estrategia, motivo):
+        votos_pares[par] = votos_pares.get(par, 0) + 1
+        razoes_por_par.setdefault(par, []).append(f"[{estrategia}] {motivo}")
+
+    # 1. QUEBRA DE COLUNA DOMINANTE
+    # Se a última coluna repetiu pelo menos 2x seguidas, aponta para as outras 2 colunas
+    if len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]:
+        par_quebra = outras_duas_colunas(cols_hist[-1])
+        adicionar_voto(
+            par_quebra,
+            "quebra_coluna",
+            f"Repetição em {cols_hist[-1]} -> cobertura em {format_cols_nome(par_quebra)}"
+        )
+
+    # 2. ALTERNÂNCIA DE COLUNAS (PING-PONG ENTRE COLUNAS)
+    if len(cols_hist) >= 4:
+        if (
+            cols_hist[-1] != cols_hist[-2]
+            and cols_hist[-2] != cols_hist[-3]
+            and cols_hist[-3] != cols_hist[-4]
+        ):
+            # Evita repetir a última coluna que acabou de sair
+            par_alt = outras_duas_colunas(cols_hist[-1])
+            adicionar_voto(
+                par_alt,
+                "alternancia_colunas",
+                f"Alternância detetada -> foco em {format_cols_nome(par_alt)}"
+            )
+
+    # 3. ATRASO / MENOR FREQUÊNCIA DE COLUNA NAS ÚLTIMAS 12
+    contagens_12 = {
+        "C1": ult_12.count("C1"),
+        "C2": ult_12.count("C2"),
+        "C3": ult_12.count("C3")
+    }
+    col_menos_frequente = min(contagens_12, key=contagens_12.get)
+    # Se houver uma coluna claramente atrasada (<= 2 saídas em 12), escolhe as outras 2
+    if contagens_12[col_menos_frequente] <= 2:
+        par_atraso = outras_duas_colunas(col_menos_frequente)
+        adicionar_voto(
+            par_atraso,
+            "atraso_coluna",
+            f"{col_menos_frequente} com apenas {contagens_12[col_menos_frequente]}/12 -> {format_cols_nome(par_atraso)}"
+        )
+
+    # 4. PRESSÃO DE CONTEXTO CURTO (ÚLTIMAS 6 COLUNAS)
+    # Se uma coluna não saiu nas últimas 6, ou se há dominância forte de uma coluna, valida o par oposto
+    col_ausente_6 = None
+    for c in ("C1", "C2", "C3"):
+        if ult_6.count(c) == 0:
+            col_ausente_6 = c
+            break
+
+    if col_ausente_6:
+        par_pressao = outras_duas_colunas(col_ausente_6)
+        adicionar_voto(
+            par_pressao,
+            "pressao_contexto",
+            f"{col_ausente_6} ausente nas últimas 6 -> {format_cols_nome(par_pressao)}"
+        )
+
+    if not votos_pares:
+        return None
+
+    # Escolhe o par de 2 colunas com mais concordância (exige pelo menos 2 fatores a concordar)
+    melhor_par = max(votos_pares, key=votos_pares.get)
+    max_votos = votos_pares[melhor_par]
+
+    if max_votos < 2:
+        return None
+
+    # Determina a estratégia principal registada
+    estrategia_registo = "quebra_coluna"
+    for r in razoes_por_par[melhor_par]:
+        if r.startswith("[alternancia_colunas]"):
+            estrategia_registo = "alternancia_colunas"
+            break
+        if r.startswith("[atraso_coluna]"):
+            estrategia_registo = "atraso_coluna"
+            break
+
+    return {
+        "cols": melhor_par,
+        "strategy": estrategia_registo,
+        "reason": " | ".join(razoes_por_par[melhor_par])
+    }
 
 
 # =====================================================
@@ -222,10 +287,6 @@ def strategy_validated(session):
     )
 
 
-# =====================================================
-# ESTADO DO CÉREBRO
-# =====================================================
-
 def brain_status(session):
     total = len(session["paper_results"])
 
@@ -248,135 +309,110 @@ def brain_status(session):
 
 
 # =====================================================
-# AVALIAÇÃO DE SIMULAÇÃO (PAPEL COM G1 E EMPATE PROTEGIDO VENCEDOR)
+# AVALIAÇÃO DE SIMULAÇÃO (PAPEL COM G1, SEM PROTEÇÃO NO 0)
 # =====================================================
 
-def evaluate_paper(session, real_result):
-    # Se houver previsões pendentes em fase de G1
+def evaluate_paper(session, col_result):
+    # Fase Gale 1 em papel
     if session.get("pending_paper_g1"):
-        pending_list = session["pending_paper_g1"]
+        pred = session["pending_paper_g1"]
         session["pending_paper_g1"] = None
 
-        if real_result == "T":
-            session["paper_ties"] += 1
-            for pred in pending_list:
-                session["paper_results"].append(True)
-                strat_name = pred["strategy"]
-                if strat_name in session["strategy_stats"]:
-                    session["strategy_stats"][strat_name]["signals"] += 1
-                    session["strategy_stats"][strat_name]["wins"] += 1
-        else:
-            for pred in pending_list:
-                correct = (pred["color"] == real_result)
-                session["paper_results"].append(correct)
-                session["paper_results"] = session["paper_results"][-1000:]
+        if col_result == "Z":
+            session["paper_zeros"] += 1
 
-                strat_name = pred["strategy"]
-                if strat_name in session["strategy_stats"]:
-                    session["strategy_stats"][strat_name]["signals"] += 1
-                    if correct:
-                        session["strategy_stats"][strat_name]["wins"] += 1
-                    else:
-                        session["strategy_stats"][strat_name]["losses"] += 1
-        return
+        acertou = (col_result in pred["cols"])
+        session["paper_results"].append(acertou)
+        session["paper_results"] = session["paper_results"][-1000:]
 
-    # Avaliação da Entrada Inicial pendente
-    pending_list = session.get("pending_paper")
-    if not pending_list:
-        return
-
-    if real_result == "T":
-        session["paper_ties"] += 1
-        for pred in pending_list:
-            session["paper_results"].append(True)
-            strat_name = pred["strategy"]
-            if strat_name in session["strategy_stats"]:
-                session["strategy_stats"][strat_name]["signals"] += 1
-                session["strategy_stats"][strat_name]["wins"] += 1
-        session["pending_paper"] = None
-    else:
-        still_pending_g1 = []
-        for pred in pending_list:
-            if pred["color"] == real_result:
-                session["paper_results"].append(True)
-                session["paper_results"] = session["paper_results"][-1000:]
-                strat_name = pred["strategy"]
-                if strat_name in session["strategy_stats"]:
-                    session["strategy_stats"][strat_name]["signals"] += 1
-                    session["strategy_stats"][strat_name]["wins"] += 1
+        strat = pred["strategy"]
+        if strat in session["strategy_stats"]:
+            session["strategy_stats"][strat]["signals"] += 1
+            if acertou:
+                session["strategy_stats"][strat]["wins"] += 1
             else:
-                still_pending_g1.append(pred)
+                session["strategy_stats"][strat]["losses"] += 1
+        return
 
-        session["pending_paper"] = None
-        if still_pending_g1:
-            session["pending_paper_g1"] = still_pending_g1
+    # Fase Entrada inicial em papel
+    pred = session.get("pending_paper")
+    if not pred:
+        return
+
+    if col_result == "Z":
+        session["paper_zeros"] += 1
+
+    session["pending_paper"] = None
+
+    if col_result in pred["cols"]:
+        session["paper_results"].append(True)
+        session["paper_results"] = session["paper_results"][-1000:]
+        strat = pred["strategy"]
+        if strat in session["strategy_stats"]:
+            session["strategy_stats"][strat]["signals"] += 1
+            session["strategy_stats"][strat]["wins"] += 1
+    else:
+        # Falhou na Entrada -> passa para Gale 1 na simulação
+        session["pending_paper_g1"] = pred
 
 
 # =====================================================
-# GESTÃO DAS OPERAÇÕES REAIS (APENAS NA COR)
+# GESTÃO DAS OPERAÇÕES REAIS (2 COLUNAS, MARTINGALE SPRINT ATÉ G1)
 # =====================================================
 
 def close_cycle(session):
-    session["active_target"] = None
+    session["active_cols"] = None
     session["gale"] = 0
 
 
-def process_live_bet(chat_id, session, result):
-    target = session["active_target"]
-    if target is None:
+def process_live_bet(chat_id, session, col_result, raw_label):
+    cols = session["active_cols"]
+    if cols is None:
         return
 
-    # EMPATE (T)
-    if result == "T":
-        session["stats"]["ties"] += 1
-        close_cycle(session)
-        bot.send_message(
-            chat_id,
-            "🟡 *RESULTADO EMPATE (T)*\n\n"
-            "Ciclo encerrado.",
-            parse_mode="Markdown"
-        )
-        return
+    if col_result == "Z":
+        session["stats"]["zeros"] += 1
 
-    # ACERTO
-    if result == target:
+    # ACERTO NUMA DAS 2 COLUNAS ESCOLHIDAS
+    if col_result in cols:
         if session["gale"] == 0:
             session["stats"]["wins"] += 1
-            level = "ENTRADA PRINCIPAL"
+            nivel = "ENTRADA PRINCIPAL"
         else:
             session["stats"]["wins"] += 1
             session["stats"]["wins_g1"] += 1
-            level = "GALE 1 (G1)"
+            nivel = "GALE 1 (G1)"
 
         close_cycle(session)
 
         bot.send_message(
             chat_id,
             "🟢 *GREEN / VITÓRIA CONFIRMADA!* ✨\n\n"
-            f"🏆 Resolução: {level}\n"
-            f"🎯 Resultado: {result}\n\n"
+            f"🏆 Resolução: {nivel}\n"
+            f"🎯 Resultado: {raw_label} ({col_result})\n"
+            f"🧱 Colunas: {format_cols_nome(cols)}\n\n"
             "Ciclo encerrado com sucesso.",
             parse_mode="Markdown"
         )
         return
 
-    # FALHA DA ENTRADA PRINCIPAL -> GALE 1
+    # FALHA NA ENTRADA -> SPRINT PARA GALE 1 (DOBRA NAS 2 COLUNAS)
     if session["gale"] == 0:
         session["gale"] = 1
-        cor_nome = "AZUL 🔵" if target == "A" else "VERMELHO 🔴"
+        total_g1 = GALE1_COLUNA * 2
 
         bot.send_message(
             chat_id,
             "🔴 *LOSS NA ENTRADA PRINCIPAL*\n\n"
-            "🔄 **GALE 1 (G1) OBRIGATÓRIO** 🚨\n\n"
-            f"👉 Direção: {cor_nome}\n"
-            f"💰 Aposta G1: {GALE1}€\n\n"
-            "Sem Gale 2.",
+            "🔄 **MARTINGALE SPRINT — GALE 1 (G1)** 🚨\n\n"
+            f"🧱 Colunas: *{format_cols_nome(cols)}*\n"
+            f"💰 Aposta por coluna: {GALE1_COLUNA}€ (Total: {total_g1}€)\n"
+            "🚫 Sem proteção no 0 | Sem Gale 2.",
             parse_mode="Markdown"
         )
         return
 
-    # FALHA DO GALE 1 -> PERDA FINAL
+    # FALHA NO GALE 1 -> PERDA FINAL DO CICLO
     session["stats"]["losses"] += 1
     close_cycle(session)
     losses = session["stats"]["losses"]
@@ -402,43 +438,45 @@ def process_live_bet(chat_id, session, result):
 
 
 # =====================================================
-# GERAR NOVA DECISÃO
+# GERAR NOVA DECISÃO DE 2 COLUNAS
 # =====================================================
 
 def generate_decision(chat_id, session):
-    if session["blocked"] or session["active_target"] is not None:
+    if session["blocked"] or session["active_cols"] is not None:
         return
 
     if session["pending_paper"] is not None or session.get("pending_paper_g1") is not None:
         return
 
-    candidate = multi_strategy_brain(session["history"])
+    candidate = roulette_columns_brain(session["history"])
 
     if candidate is None:
         session["stats"]["observations"] += 1
         return
 
-    session["pending_paper"] = [candidate]
-    status, detail = brain_status(session)
+    session["pending_paper"] = candidate
+    brain_status(session)
 
     if not strategy_validated(session):
         return
 
-    session["active_target"] = candidate["color"]
+    cols = candidate["cols"]
+    session["active_cols"] = cols
     session["gale"] = 0
     session["stats"]["entries"] += 1
 
-    cor_nome = "AZUL 🔵" if candidate["color"] == "A" else "VERMELHO 🔴"
+    total_entrada = ENTRADA_COLUNA * 2
 
     bot.send_message(
         chat_id,
-        "🧠 *MULTISTRATEGY BRAIN*\n\n"
+        "🧠 *ROULETTE 2 COLUMNS BRAIN*\n\n"
         "📊 FILTRO ESTATÍSTICO APROVADO\n\n"
-        f"🎯 Direção: {cor_nome}\n"
-        f"💰 Entrada: {ENTRADA}€\n\n"
-        f"🔎 Estratégia(s): {candidate['strategy']}\n"
-        f"💡 Motivo: {candidate['reason']}\n\n"
-        "⚠️ Critérios experimentais cumpridos.",
+        f"🧱 Entrar em: *{format_cols_nome(cols)}*\n"
+        f"💰 Aposta: {ENTRADA_COLUNA}€ por coluna (Total: {total_entrada}€)\n"
+        f"🔄 Gale 1: {GALE1_COLUNA}€ por coluna (Total: {GALE1_COLUNA * 2}€)\n"
+        "🚫 Sem proteção no 0 | Até Gale 1\n\n"
+        f"🔎 Estratégia: {candidate['strategy']}\n"
+        f"💡 Motivo: {candidate['reason']}",
         parse_mode="Markdown"
     )
 
@@ -447,11 +485,11 @@ def generate_decision(chat_id, session):
 # RECEBER UMA NOVA JOGADA
 # =====================================================
 
-def receive_result(chat_id, session, result):
-    evaluate_paper(session, result)
-    process_live_bet(chat_id, session, result)
+def receive_result(chat_id, session, col_result, raw_label):
+    evaluate_paper(session, col_result)
+    process_live_bet(chat_id, session, col_result, raw_label)
 
-    session["history"].append(result)
+    session["history"].append(col_result)
     session["history"] = session["history"][-250:]
 
     if not session["blocked"]:
@@ -465,17 +503,19 @@ def receive_result(chat_id, session, result):
 @bot.message_handler(commands=["start"])
 def start(message):
     sessions[message.chat.id] = nova_sessao()
+    total_entrada = ENTRADA_COLUNA * 2
+    total_g1 = GALE1_COLUNA * 2
 
     bot.reply_to(
         message,
-        "🤖 *BAC BO - MULTISTRATEGY BRAIN*\n\n"
-        "Sistema otimizado com calibração de 10 ciclos e G1!\n\n"
-        "📊 Envia as tuas 10 jogadas iniciais.\n\n"
+        "🤖 *BAC BO / ROULETTE 2 COLUMNS BRAIN*\n\n"
+        f"Sistema de 2 Colunas (1ª e 2ª / 1ª e 3ª) com Martingale sprint até Gale 1 e calibração de {MIN_PAPER} ciclos!\n\n"
+        f"📊 Envia as tuas {JANELA} jogadas iniciais (números 0-36 ou C1/C2/C3).\n\n"
         "Exemplo:\n"
-        "`A V A A V T V A V V`\n\n"
-        "🔵 A = Azul | 🔴 V = Vermelho | 🟡 T = Empate\n\n"
-        "💰 Entrada: 3€ | 🔄 G1: 6€\n"
-        "🚨 Máximo: 2 perdas finais\n\n"
+        "`34 5 17 31 3 17 14 0 21 8`\n\n"
+        f"💰 Entrada: {ENTRADA_COLUNA}€ x2 ({total_entrada}€) | 🔄 G1: {GALE1_COLUNA}€ x2 ({total_g1}€)\n"
+        "🚫 Sem proteção no 0 | Sem Gale 2\n"
+        f"🚨 Máximo: {LIMITE_LOSSES} perdas finais\n\n"
         "/stats - Estatísticas detalhadas\n"
         "/status - Estado do cérebro\n"
         "/reset - Reiniciar sessão\n"
@@ -489,11 +529,11 @@ def help_command(message):
     bot.reply_to(
         message,
         "📖 *COMO UTILIZAR*\n\n"
-        "1. Utiliza /start.\n"
-        "2. Envia exatamente 10 jogadas iniciais.\n"
+        f"1. Utiliza /start.\n"
+        f"2. Envia exatamente {JANELA} jogadas iniciais (ex: números de 0 a 36 ou C1, C2, C3).\n"
         "3. Depois envia apenas uma jogada de cada vez.\n"
-        "4. O cérebro avalia as 4 estratégias após cada resultado.\n\n"
-        "A = Azul | V = Vermelho | T = Empate",
+        "4. O robô avalia sempre pares de 2 colunas sem proteção no 0.\n\n"
+        "0 = Zero | C1 = 1ª Coluna | C2 = 2ª Coluna | C3 = 3ª Coluna",
         parse_mode="Markdown"
     )
 
@@ -501,22 +541,22 @@ def help_command(message):
 @bot.message_handler(commands=["status"])
 def status_command(message):
     session = sessions.get(message.chat.id)
-
     if session is None:
         bot.reply_to(message, "Utiliza /start primeiro.")
         return
 
     status, detail = brain_status(session)
+    ativa_txt = format_cols_nome(session["active_cols"]) if session["active_cols"] else "NÃO"
 
     bot.reply_to(
         message,
-        "🧠 *ESTADO DO MULTISTRATEGY BRAIN*\n\n"
+        "🧠 *ESTADO DO ROULETTE 2 COLUMNS BRAIN*\n\n"
         f"📊 Estado: {status}\n"
         f"🔎 {detail}\n"
         f"📜 Histórico: {len(session['history'])} jogadas\n"
         f"🎯 Simulações concluídas: {len(session['paper_results'])}/{MIN_PAPER}\n"
-        f"🟡 Empates simulados: {session['paper_ties']}\n"
-        f"🛡️ Operação ativa: {'SIM' if session['active_target'] else 'NÃO'}\n"
+        f"🟢 Zeros simulados: {session['paper_zeros']}\n"
+        f"🛡️ Operação ativa: {ativa_txt}\n"
         f"🚨 Bloqueado: {'SIM' if session['blocked'] else 'NÃO'}",
         parse_mode="Markdown"
     )
@@ -525,41 +565,40 @@ def status_command(message):
 @bot.message_handler(commands=["stats"])
 def stats_command(message):
     session = sessions.get(message.chat.id)
-
     if session is None:
         bot.reply_to(message, "Utiliza /start primeiro.")
         return
 
     st = session["stats"]
-    resolved = st["wins"] + st["losses"]
-    rate = (st["wins"] / resolved * 100) if resolved else 0
+    resolvidas = st["wins"] + st["losses"]
+    taxa_real = (st["wins"] / resolvidas * 100) if resolvidas else 0.0
 
     paper = session["paper_results"]
-    paper_rate = (sum(paper) / len(paper) * 100) if paper else 0
-    recent_paper = paper[-MIN_RECENTES:] if paper else []
-    recent_rate = (sum(recent_paper) / len(recent_paper) * 100) if recent_paper else 0
-    lower = (wilson_lower_bound(sum(paper), len(paper)) * 100) if paper else 0
+    taxa_papel = (sum(paper) / len(paper) * 100) if paper else 0.0
+    recentes = paper[-MIN_RECENTES:] if paper else []
+    taxa_recente = (sum(recentes) / len(recentes) * 100) if recentes else 0.0
+    wilson = (wilson_lower_bound(sum(paper), len(paper)) * 100) if paper else 0.0
 
     strat_text = ""
     for s_name, s_data in session["strategy_stats"].items():
         s_tot = s_data["wins"] + s_data["losses"]
-        s_rate = (s_data["wins"] / s_tot * 100) if s_tot else 0
+        s_rate = (s_data["wins"] / s_tot * 100) if s_tot else 0.0
         strat_text += f"• *{s_name}*: {s_data['wins']}W / {s_data['losses']}L ({s_rate:.1f}%)\n"
 
     bot.reply_to(
         message,
-        "📊 *RELATÓRIO MULTISTRATEGY BRAIN*\n\n"
+        "📊 *RELATÓRIO ROULETTE 2 COLUMNS BRAIN*\n\n"
         "OPERAÇÕES REAIS\n"
         f"🟢 Greens: {st['wins']} (G1: {st['wins_g1']})\n"
         f"🔴 Perdas finais: {st['losses']}/{LIMITE_LOSSES}\n"
-        f"🟡 Empates: {st['ties']}\n"
+        f"🟢 Zeros detetados: {st['zeros']}\n"
         f"🎯 Entradas: {st['entries']}\n"
-        f"📈 Taxa de acerto real: {rate:.2f}%\n\n"
+        f"📈 Taxa de acerto real: {taxa_real:.2f}%\n\n"
         f"SIMULAÇÃO / PAPEL (Alvo: {MIN_PAPER} ciclos)\n"
         f"📊 Total ciclos simulados: {len(paper)}\n"
-        f"📈 Taxa simulada global: {paper_rate:.2f}%\n"
-        f"📈 Taxa últimas {MIN_RECENTES}: {recent_rate:.2f}%\n"
-        f"📉 Limite inferior Wilson: {lower:.2f}%\n\n"
+        f"📈 Taxa simulada global: {taxa_papel:.2f}%\n"
+        f"📈 Taxa últimas {MIN_RECENTES}: {taxa_recente:.2f}%\n"
+        f"📉 Limite inferior Wilson: {wilson:.2f}%\n\n"
         "DESEMPENHO POR ESTRATÉGIA\n"
         f"{strat_text}\n"
         f"Estado da validação: {brain_status(session)[0]}",
@@ -572,13 +611,13 @@ def reset_command(message):
     sessions[message.chat.id] = nova_sessao()
     bot.reply_to(
         message,
-        "🔄 Sessão reiniciada!\n\n"
-        "Envia novamente as 10 jogadas iniciais."
+        f"🔄 Sessão reiniciada!\n\n"
+        f"Envia novamente as {JANELA} jogadas iniciais."
     )
 
 
 # =====================================================
-# RECEBER RESULTADOS DA MESA (COM FEEDBACK DE CONFIRMAÇÃO)
+# RECEBER RESULTADOS DA MESA
 # =====================================================
 
 @bot.message_handler(
@@ -593,16 +632,6 @@ def handle_results(message):
         bot.reply_to(message, "Utiliza /start para iniciar o bot.")
         return
 
-    raw = message.text.upper()
-    cleaned = re.sub(r"[\s,;|]+", "", raw)
-
-    if not cleaned or any(c not in "AVT" for c in cleaned):
-        bot.reply_to(
-            message,
-            "⚠️ Formato inválido.\nUtiliza apenas A, V ou T."
-        )
-        return
-
     if session["blocked"]:
         bot.reply_to(
             message,
@@ -610,46 +639,65 @@ def handle_results(message):
         )
         return
 
-    # PRIMEIRO ENVIO: 10 JOGADAS INICIAIS
-    if session["awaiting_seed"]:
-        if len(cleaned) != JANELA:
+    tokens = re.findall(r"C[123]|\d+", message.text.upper())
+    if not tokens:
+        bot.reply_to(
+            message,
+            "⚠️ Formato inválido.\nUtiliza números de 0 a 36 ou C1, C2, C3."
+        )
+        return
+
+    parsed = []
+    for tk in tokens:
+        col = parse_token_to_col(tk)
+        if col is None:
             bot.reply_to(
                 message,
-                f"⚠️ Preciso de exatamente 10 jogadas iniciais. Tens {len(cleaned)}."
+                f"⚠️ Valor inválido: `{tk}`.\nUsa números de 0 a 36 ou C1, C2, C3.",
+                parse_mode="Markdown"
+            )
+            return
+        parsed.append((tk, col))
+
+    # PRIMEIRO ENVIO: 10 JOGADAS INICIAIS
+    if session["awaiting_seed"]:
+        if len(parsed) != JANELA:
+            bot.reply_to(
+                message,
+                f"⚠️ Preciso de exatamente {JANELA} jogadas iniciais. Tens {len(parsed)}."
             )
             return
 
-        session["history"] = list(cleaned)
+        session["history"] = [col for _, col in parsed]
         session["awaiting_seed"] = False
 
-        candidate = multi_strategy_brain(session["history"])
+        candidate = roulette_columns_brain(session["history"])
         if candidate:
-            session["pending_paper"] = [candidate]
+            session["pending_paper"] = candidate
 
         bot.reply_to(
             message,
             "🧠 *HISTÓRICO CARREGADO!* 🚀\n\n"
-            "As 10 jogadas foram guardadas.\n"
+            f"As {JANELA} jogadas foram guardadas.\n"
             "Envia agora **apenas UMA nova jogada** de cada vez.",
             parse_mode="Markdown"
         )
         return
 
     # FLUXO NORMAL: UMA JOGADA DE CADA VEZ
-    if len(cleaned) != 1:
+    if len(parsed) != 1:
         bot.reply_to(
             message,
-            "⚠️ Envia apenas um resultado por mensagem (ex: A)."
+            "⚠️ Envia apenas um resultado por mensagem (ex: 34 ou C1)."
         )
         return
 
-    # Processar o resultado da ronda
-    receive_result(chat_id, session, cleaned)
-    
-    # Feedback imediato de confirmação
+    raw_label, col_result = parsed[0]
+    receive_result(chat_id, session, col_result, raw_label)
+
     bot.reply_to(
         message,
-        f"✅ Jogada `{cleaned}` registada! Histórico ativo: `{len(session['history'])}` rondas. A analisar...",
+        f"✅ Jogada `{raw_label}` ({col_result}) registada! Histórico ativo: `{len(session['history'])}` rondas. A analisar...",
         parse_mode="Markdown"
     )
 
@@ -659,7 +707,7 @@ def handle_results(message):
 # =====================================================
 
 if __name__ == "__main__":
-    print("BAC BO MULTISTRATEGY BRAIN ONLINE")
+    print("ROULETTE 2 COLUMNS BRAIN ONLINE")
 
     Thread(
         target=run_web,
