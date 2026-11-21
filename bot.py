@@ -8,7 +8,7 @@ from flask import Flask
 
 # =====================================================
 # TWO COLUMNS (NO T PROTECTION) - ADAPTIVE LEARNING BRAIN
-# Motor de 2 Colunas (C1+C2 / C1+C3) sem Proteção no T, Martingale até G1 e Aprendizagem Pós-Loss
+# Motor de 2 Colunas (C1+C2 / C1+C3) sem Proteção no T, Martingale até G2 e Aprendizagem Pós-Loss
 # =====================================================
 
 TOKEN = os.getenv(
@@ -25,9 +25,10 @@ app = Flask(__name__)
 # CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO (2 COLUNAS, SEM PROTEÇÃO NO T)
 ENTRADA_COLUNA = 4      # Aposta base em cada uma das 2 colunas (Entrada)
 GALE1_COLUNA = 8        # Aposta em cada uma das 2 colunas no Gale 1 (G1)
+GALE2_COLUNA = 16       # Aposta em cada uma das 2 colunas no Gale 2 (G2)
 
 JANELA = 10             # Jogadas iniciais para arrancar
-LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 falhados)
+LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 + G2 falhados)
 
 MIN_PAPER = 0           # Sem filtro experimental prévio: entra logo em real
 MIN_RECENTES = 10       # Janela recente para consulta de estatísticas
@@ -66,7 +67,7 @@ def nova_sessao():
         "active_cols": None,    # Tuplo de 2 colunas, ex: ("C1", "C2") ou ("C1", "C3")
         "active_reason": "",
         "active_strategy": "",
-        "gale": 0,              # 0 = Entrada, 1 = Gale 1
+        "gale": 0,              # 0 = Entrada, 1 = Gale 1, 2 = Gale 2
         "blocked": False,
 
         # Sistema de aprendizagem / autópsia pós-loss
@@ -85,6 +86,7 @@ def nova_sessao():
         # Registo de ciclos concluídos
         "pending_paper": None,
         "pending_paper_g1": None,
+        "pending_paper_g2": None,
 
         # Resultados globais registados
         "paper_results": [],
@@ -101,6 +103,7 @@ def nova_sessao():
         "stats": {
             "wins": 0,
             "wins_g1": 0,
+            "wins_g2": 0,
             "losses": 0,
             "t_hits": 0,
             "entries": 0,
@@ -201,7 +204,7 @@ def registar_acerto_aprendizagem(session, cols_apostadas, estrategia):
 
 
 # =====================================================
-# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (COM APRENDIZAGEM)
+# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (COM CONCORDÂNCIA E APRENDIZAGEM)
 # =====================================================
 
 def two_columns_brain(session):
@@ -243,8 +246,8 @@ def two_columns_brain(session):
                     f"Quebra de repetição de {format_col_nome(col_repetida)} -> foco em {format_par_cols(par)}"
                 )
 
-    # 2. ALTERNÂNCIA DE COLUNAS (exige concordância com outra estratégia e penalidade <= 1)
-    if len(cols_hist) >= 4 and session["strategy_penalty"].get("alternancia_colunas", 0) <= 1:
+    # 2. ALTERNÂNCIA DE COLUNAS (ritmo variado entre colunas, se penalidade <= 2)
+    if len(cols_hist) >= 4 and session["strategy_penalty"].get("alternancia_colunas", 0) <= 2:
         if (
             cols_hist[-1] != cols_hist[-2]
             and cols_hist[-2] != cols_hist[-3]
@@ -276,20 +279,20 @@ def two_columns_brain(session):
                         f"{format_col_nome(c)} com {contagens_10[c]}/10 saídas -> par {format_par_cols(par)}"
                     )
 
-    # Se a alternância estiver no par, exige que outra estratégia também concorde nesse par
-    for par in pares_validos:
-        if estrategias_por_par[par] == {"alternancia_colunas"}:
-            scores_par[par] = 0.0
-            razoes_por_par[par] = []
-            estrategias_por_par[par] = set()
+    # Exige concordância (pelo menos 2 sinais/critérios a favor do mesmo par)
+    pares_com_concordancia = [
+        par for par in pares_validos if len(razoes_por_par[par]) >= 2
+    ]
+    if not pares_com_concordancia:
+        return None
 
     ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
 
-    melhor_par = max(scores_par, key=scores_par.get)
+    melhor_par = max(pares_com_concordancia, key=lambda p: scores_par[p])
     melhor_score = scores_par[melhor_par]
 
     min_score_exigido = 2.0 if (ultimo_erro and ultimo_erro.get("cols") == melhor_par) else 1.5
-    if melhor_score < min_score_exigido or not razoes_por_par[melhor_par]:
+    if melhor_score < min_score_exigido or len(razoes_por_par[melhor_par]) < 2:
         return None
 
     prioridade_estrategias = ["quebra_coluna", "atraso_coluna", "alternancia_colunas"]
@@ -337,17 +340,17 @@ def brain_status(session):
 
 
 # =====================================================
-# AVALIAÇÃO DE CICLO (2 COLUNAS, SEM PROTEÇÃO NO T, ATÉ G1)
+# AVALIAÇÃO DE CICLO (2 COLUNAS, SEM PROTEÇÃO NO T, ATÉ G2)
 # =====================================================
 
 def evaluate_paper(session, outcome):
     if outcome == "T":
         session["paper_t"] += 1
 
-    # Fase Gale 1
-    if session.get("pending_paper_g1"):
-        pred = session["pending_paper_g1"]
-        session["pending_paper_g1"] = None
+    # Fase Gale 2
+    if session.get("pending_paper_g2"):
+        pred = session["pending_paper_g2"]
+        session["pending_paper_g2"] = None
 
         acertou = (outcome in pred["cols"])
         session["paper_results"].append(acertou)
@@ -362,6 +365,24 @@ def evaluate_paper(session, outcome):
             else:
                 session["strategy_stats"][strat]["losses"] += 1
                 registrar_autopsia_loss(session, pred["cols"], strat, outcome, session["history"])
+        return
+
+    # Fase Gale 1
+    if session.get("pending_paper_g1"):
+        pred = session["pending_paper_g1"]
+        session["pending_paper_g1"] = None
+
+        if outcome in pred["cols"]:
+            session["paper_results"].append(True)
+            session["paper_results"] = session["paper_results"][-1000:]
+            strat = pred["strategy"]
+            if strat in session["strategy_stats"]:
+                session["strategy_stats"][strat]["signals"] += 1
+                session["strategy_stats"][strat]["wins"] += 1
+            registar_acerto_aprendizagem(session, pred["cols"], strat)
+        else:
+            # Falhou no Gale 1 -> passa para Gale 2
+            session["pending_paper_g2"] = pred
         return
 
     # Fase Entrada inicial
@@ -385,7 +406,7 @@ def evaluate_paper(session, outcome):
 
 
 # =====================================================
-# GESTÃO DAS OPERAÇÕES REAIS (2 COLUNAS, SEM PROTEÇÃO NO T, ATÉ G1)
+# GESTÃO DAS OPERAÇÕES REAIS (2 COLUNAS, SEM PROTEÇÃO NO T, ATÉ G2)
 # =====================================================
 
 def close_cycle(session):
@@ -409,10 +430,14 @@ def process_live_bet(chat_id, session, outcome, raw_label):
         if session["gale"] == 0:
             session["stats"]["wins"] += 1
             nivel = "ENTRADA PRINCIPAL"
-        else:
+        elif session["gale"] == 1:
             session["stats"]["wins"] += 1
             session["stats"]["wins_g1"] += 1
             nivel = "GALE 1 (G1)"
+        else:
+            session["stats"]["wins"] += 1
+            session["stats"]["wins_g2"] += 1
+            nivel = "GALE 2 (G2)"
 
         registar_acerto_aprendizagem(session, cols, strat)
         close_cycle(session)
@@ -439,12 +464,28 @@ def process_live_bet(chat_id, session, outcome, raw_label):
             "🔄 **GALE 1 (G1)** 🚨\n\n"
             f"🧱 Colunas: *{format_par_cols(cols)}*\n"
             f"💰 Aposta: {GALE1_COLUNA}€ em cada coluna (Total: {total_g1}€)\n"
-            "Sem proteção no empate | Sem Gale 2.",
+            "Sem proteção no empate | Próximo passo: Gale 2.",
             parse_mode="Markdown"
         )
         return
 
-    # FALHA NO GALE 1 -> AUTÓPSIA DO ERRO E PERDA FINAL DO CICLO
+    # FALHA NO GALE 1 -> VAI PARA GALE 2 (G2)
+    if session["gale"] == 1:
+        session["gale"] = 2
+        total_g2 = GALE2_COLUNA * 2
+
+        bot.send_message(
+            chat_id,
+            "🔴 *LOSS NO GALE 1 (G1)*\n\n"
+            "🔄 **GALE 2 (G2)** 🚨\n\n"
+            f"🧱 Colunas: *{format_par_cols(cols)}*\n"
+            f"💰 Aposta: {GALE2_COLUNA}€ em cada coluna (Total: {total_g2}€)\n"
+            "Sem proteção no empate | Último Gale do ciclo.",
+            parse_mode="Markdown"
+        )
+        return
+
+    # FALHA NO GALE 2 -> AUTÓPSIA DO ERRO E PERDA FINAL DO CICLO
     strat = session["active_strategy"]
     diagnostico = registrar_autopsia_loss(session, cols, strat, outcome, session["history"])
     session["stats"]["losses"] += 1
@@ -465,7 +506,7 @@ def process_live_bet(chat_id, session, outcome, raw_label):
     else:
         bot.send_message(
             chat_id,
-            "❌ *LOSS FINAL - GALE 1 FALHADO*\n\n"
+            "❌ *LOSS FINAL - GALE 2 FALHADO*\n\n"
             f"🔴 Perdas finais: {losses}/{LIMITE_LOSSES}\n"
             f"🧠 Autópsia e aprendizagem: {diagnostico}\n\n"
             "O cérebro ajustou os pesos e arrefeceu este padrão para não repetir o mesmo erro.",
@@ -481,7 +522,11 @@ def generate_decision(chat_id, session):
     if session["blocked"] or session["active_cols"] is not None:
         return
 
-    if session["pending_paper"] is not None or session.get("pending_paper_g1") is not None:
+    if (
+        session["pending_paper"] is not None
+        or session.get("pending_paper_g1") is not None
+        or session.get("pending_paper_g2") is not None
+    ):
         return
 
     candidate = two_columns_brain(session)
@@ -501,6 +546,7 @@ def generate_decision(chat_id, session):
 
     total_entrada = ENTRADA_COLUNA * 2
     total_g1 = GALE1_COLUNA * 2
+    total_g2 = GALE2_COLUNA * 2
 
     bot.send_message(
         chat_id,
@@ -509,7 +555,8 @@ def generate_decision(chat_id, session):
         f"🧱 Entrar em: *{format_par_cols(cols)}*\n"
         f"💰 Entrada: {ENTRADA_COLUNA}€ por coluna (Total: {total_entrada}€)\n"
         f"🔄 Gale 1: {GALE1_COLUNA}€ por coluna (Total: {total_g1}€)\n"
-        "Sem proteção no empate | Até Gale 1\n\n"
+        f"🔄 Gale 2: {GALE2_COLUNA}€ por coluna (Total: {total_g2}€)\n"
+        "Sem proteção no empate | Até Gale 2\n\n"
         f"🔎 Estratégia: {candidate['strategy']}\n"
         f"💡 Motivo: {candidate['reason']}",
         parse_mode="Markdown"
@@ -541,16 +588,17 @@ def start(message):
     sessions[message.chat.id] = nova_sessao()
     total_entrada = ENTRADA_COLUNA * 2
     total_g1 = GALE1_COLUNA * 2
+    total_g2 = GALE2_COLUNA * 2
 
     bot.reply_to(
         message,
         "🤖 *TWO COLUMNS BRAIN*\n\n"
-        "Sistema de 2 Colunas (C1+C2 / C1+C3) sem proteção no empate, até Gale 1, aprendizagem pós-loss e entradas reais imediatas!\n\n"
+        "Sistema de 2 Colunas (C1+C2 / C1+C3) sem proteção no empate, até Gale 2, aprendizagem pós-loss e entradas reais imediatas!\n\n"
         f"📊 Envia as tuas {JANELA} jogadas iniciais (números 0-36 ou C1/C2/C3).\n\n"
         "Exemplo:\n"
         "`34 5 17 31 3 17 14 21 8 12`\n\n"
-        f"💰 Entrada: {ENTRADA_COLUNA}€ x 2 col ({total_entrada}€) | 🔄 G1: {GALE1_COLUNA}€ x 2 col ({total_g1}€)\n"
-        "Sem proteção no empate | Sem Gale 2\n"
+        f"💰 Entrada: {ENTRADA_COLUNA}€ x 2 col ({total_entrada}€) | 🔄 G1: {GALE1_COLUNA}€ x 2 col ({total_g1}€) | 🔄 G2: {GALE2_COLUNA}€ x 2 col ({total_g2}€)\n"
+        "Sem proteção no empate | Até Gale 2\n"
         f"🚨 Máximo: {LIMITE_LOSSES} perdas finais\n\n"
         "/stats - Estatísticas detalhadas\n"
         "/status - Estado do cérebro e aprendizagem\n"
@@ -628,7 +676,7 @@ def stats_command(message):
         message,
         "📊 *RELATÓRIO TWO COLUMNS BRAIN*\n\n"
         "OPERAÇÕES REAIS\n"
-        f"🟢 Greens: {st['wins']} (G1: {st['wins_g1']})\n"
+        f"🟢 Greens: {st['wins']} (G1: {st['wins_g1']} | G2: {st['wins_g2']})\n"
         f"🔴 Perdas finais: {st['losses']}/{LIMITE_LOSSES}\n"
         f"🎯 Entradas: {st['entries']}\n"
         f"📈 Taxa de acerto real: {taxa_real:.2f}%\n\n"
