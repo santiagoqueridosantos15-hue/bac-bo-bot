@@ -220,19 +220,16 @@ def two_columns_brain(session):
 
     scores_par = {par: 0.0 for par in pares_validos}
     razoes_por_par = {par: [] for par in pares_validos}
-    estrategia_por_par = {}
+    estrategias_por_par = {par: set() for par in pares_validos}
 
     def adicionar_ponto_par(par, pontos, estrategia, motivo):
-        if estrategia == "alternancia_colunas":
-            return
         if any(session["cooldown_by_col"].get(c, 0) > 0 for c in par):
             return
         penalidade = session["strategy_penalty"].get(estrategia, 0)
         peso_final = max(0.25, pontos - (0.5 * penalidade))
         scores_par[par] += peso_final
         razoes_por_par[par].append(f"[{estrategia}] {motivo}")
-        if par not in estrategia_por_par:
-            estrategia_por_par[par] = estrategia
+        estrategias_por_par[par].add(estrategia)
 
     # 1. QUEBRA DE COLUNA DOMINANTE (repetição da mesma coluna)
     if len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]:
@@ -246,8 +243,8 @@ def two_columns_brain(session):
                     f"Quebra de repetição de {format_col_nome(col_repetida)} -> foco em {format_par_cols(par)}"
                 )
 
-    # 2. ALTERNÂNCIA DE COLUNAS (desativada para não mandar entradas)
-    if len(cols_hist) >= 4:
+    # 2. ALTERNÂNCIA DE COLUNAS (exige concordância com outra estratégia e penalidade <= 1)
+    if len(cols_hist) >= 4 and session["strategy_penalty"].get("alternancia_colunas", 0) <= 1:
         if (
             cols_hist[-1] != cols_hist[-2]
             and cols_hist[-2] != cols_hist[-3]
@@ -279,6 +276,13 @@ def two_columns_brain(session):
                         f"{format_col_nome(c)} com {contagens_10[c]}/10 saídas -> par {format_par_cols(par)}"
                     )
 
+    # Se a alternância estiver no par, exige que outra estratégia também concorde nesse par
+    for par in pares_validos:
+        if estrategias_por_par[par] == {"alternancia_colunas"}:
+            scores_par[par] = 0.0
+            razoes_por_par[par] = []
+            estrategias_por_par[par] = set()
+
     ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
 
     melhor_par = max(scores_par, key=scores_par.get)
@@ -288,9 +292,15 @@ def two_columns_brain(session):
     if melhor_score < min_score_exigido or not razoes_por_par[melhor_par]:
         return None
 
+    prioridade_estrategias = ["quebra_coluna", "atraso_coluna", "alternancia_colunas"]
+    estrategia_principal = next(
+        (e for e in prioridade_estrategias if e in estrategias_por_par[melhor_par]),
+        "quebra_coluna"
+    )
+
     return {
         "cols": melhor_par,
-        "strategy": estrategia_por_par.get(melhor_par, "quebra_coluna"),
+        "strategy": estrategia_principal,
         "reason": " | ".join(razoes_por_par[melhor_par])
     }
 
