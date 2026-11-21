@@ -223,6 +223,8 @@ def two_columns_brain(session):
     estrategia_por_par = {}
 
     def adicionar_ponto_par(par, pontos, estrategia, motivo):
+        if estrategia == "alternancia_colunas":
+            return
         if any(session["cooldown_by_col"].get(c, 0) > 0 for c in par):
             return
         penalidade = session["strategy_penalty"].get(estrategia, 0)
@@ -244,7 +246,7 @@ def two_columns_brain(session):
                     f"Quebra de repetição de {format_col_nome(col_repetida)} -> foco em {format_par_cols(par)}"
                 )
 
-    # 2. ALTERNÂNCIA DE COLUNAS (ritmo variado entre colunas)
+    # 2. ALTERNÂNCIA DE COLUNAS (desativada para não mandar entradas)
     if len(cols_hist) >= 4:
         if (
             cols_hist[-1] != cols_hist[-2]
