@@ -7,8 +7,8 @@ import telebot
 from flask import Flask
 
 # =====================================================
-# SINGLE COLUMN + T PROTECTION - ADAPTIVE LEARNING BRAIN
-# Motor de 1 Coluna (C1 / C2 / C3) + Proteção no T, Martingale até G1 e Aprendizagem Pós-Loss
+# TWO COLUMNS (NO T PROTECTION) - ADAPTIVE LEARNING BRAIN
+# Motor de 2 Colunas (C1+C2 / C1+C3) sem Proteção no T, Martingale até G1 e Aprendizagem Pós-Loss
 # =====================================================
 
 TOKEN = os.getenv(
@@ -22,12 +22,9 @@ if not TOKEN or TOKEN == "COLOCA_AQUI_O_TEU_TOKEN_NOVO":
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO (1 COLUNA + PROTEÇÃO NO T)
-ENTRADA_COLUNA = 4      # Aposta base na coluna escolhida (Entrada)
-ENTRADA_T = 2           # Proteção no T na Entrada
-
-GALE1_COLUNA = 8        # Aposta na coluna escolhida no Gale 1 (G1)
-GALE1_T = 4             # Proteção no T no Gale 1 (G1)
+# CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO (2 COLUNAS, SEM PROTEÇÃO NO T)
+ENTRADA_COLUNA = 4      # Aposta base em cada uma das 2 colunas (Entrada)
+GALE1_COLUNA = 8        # Aposta em cada uma das 2 colunas no Gale 1 (G1)
 
 JANELA = 10             # Jogadas iniciais para arrancar
 LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 falhados)
@@ -45,7 +42,7 @@ sessions = {}
 
 @app.route("/")
 def home():
-    return "SINGLE COLUMN + T PROTECTION BRAIN - ONLINE 24/7, ZÉ!"
+    return "TWO COLUMNS BRAIN - ONLINE 24/7, ZÉ!"
 
 
 def run_web():
@@ -66,7 +63,7 @@ def nova_sessao():
         "history": [],          # Lista de resultados ("C1", "C2", "C3", "T", "Z")
         "awaiting_seed": True,
 
-        "active_col": None,     # Ex: "C1", "C2" ou "C3" (sempre apenas UMA coluna)
+        "active_cols": None,    # Tuplo de 2 colunas, ex: ("C1", "C2") ou ("C1", "C3")
         "active_reason": "",
         "active_strategy": "",
         "gale": 0,              # 0 = Entrada, 1 = Gale 1
@@ -113,7 +110,7 @@ def nova_sessao():
 
 
 # =====================================================
-# CONVERSÃO DE RESULTADO PARA COLUNA / T
+# CONVERSÃO DE RESULTADO PARA COLUNA / Z
 # =====================================================
 
 C1_NUMS = {1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34}
@@ -156,6 +153,10 @@ def format_col_nome(col):
     return nomes.get(col, col)
 
 
+def format_par_cols(cols_tuple):
+    return f"{format_col_nome(cols_tuple[0])} e {format_col_nome(cols_tuple[1])}"
+
+
 # =====================================================
 # APRENDIZAGEM / AUTÓPSIA PÓS-LOSS
 # =====================================================
@@ -166,24 +167,22 @@ def tick_learning_cooldowns(session):
             session["cooldown_by_col"][col] -= 1
 
 
-def registrar_autopsia_loss(session, col_apostada, estrategia, ult_resultado, contexto_cols):
-    # Analisa o porquê do loss e ajusta pesos/arrefecimento para não repetir o mesmo erro
-    if ult_resultado == "T":
-        motivo_erro = f"Saiu T mas a proteção não segurou o ciclo na {format_col_nome(col_apostada)}"
-    elif ult_resultado in ("C1", "C2", "C3") and ult_resultado != col_apostada:
-        motivo_erro = f"A mesa puxou para {format_col_nome(ult_resultado)} em vez de {format_col_nome(col_apostada)}"
+def registrar_autopsia_loss(session, cols_apostadas, estrategia, ult_resultado, contexto_cols):
+    cols_txt = format_par_cols(cols_apostadas)
+    if ult_resultado in ("C1", "C2", "C3") and ult_resultado not in cols_apostadas:
+        motivo_erro = f"A mesa puxou para {format_col_nome(ult_resultado)} fora do par {cols_txt}"
     else:
-        motivo_erro = f"Falha em {format_col_nome(col_apostada)} com resultado {ult_resultado}"
+        motivo_erro = f"Falha no par {cols_txt} com resultado {ult_resultado}"
 
-    # Aumenta penalização da estratégia que falhou e coloca arrefecimento na coluna que levou loss
     if estrategia in session["strategy_penalty"]:
         session["strategy_penalty"][estrategia] = min(session["strategy_penalty"][estrategia] + 1, 3)
 
-    if col_apostada in session["cooldown_by_col"]:
-        session["cooldown_by_col"][col_apostada] = max(session["cooldown_by_col"][col_apostada], 3)
+    for c in cols_apostadas:
+        if c in session["cooldown_by_col"]:
+            session["cooldown_by_col"][c] = max(session["cooldown_by_col"][c], 3)
 
     session["error_memory"].append({
-        "col": col_apostada,
+        "cols": cols_apostadas,
         "strategy": estrategia,
         "last_outcome": ult_resultado,
         "context": contexto_cols[-6:],
@@ -193,19 +192,19 @@ def registrar_autopsia_loss(session, col_apostada, estrategia, ult_resultado, co
     return motivo_erro
 
 
-def registar_acerto_aprendizagem(session, col_apostada, estrategia):
-    # Quando acerta, alivia gradualmente a penalização da estratégia e reduz arrefecimento
+def registar_acerto_aprendizagem(session, cols_apostadas, estrategia):
     if estrategia in session["strategy_penalty"] and session["strategy_penalty"][estrategia] > 0:
         session["strategy_penalty"][estrategia] -= 1
-    if col_apostada in session["cooldown_by_col"] and session["cooldown_by_col"][col_apostada] > 0:
-        session["cooldown_by_col"][col_apostada] -= 1
+    for c in cols_apostadas:
+        if c in session["cooldown_by_col"] and session["cooldown_by_col"][c] > 0:
+            session["cooldown_by_col"][c] -= 1
 
 
 # =====================================================
-# CÉREBRO DE 1 COLUNA + PROTEÇÃO NO T (COM APRENDIZAGEM)
+# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (COM APRENDIZAGEM)
 # =====================================================
 
-def single_column_brain(session):
+def two_columns_brain(session):
     history = session["history"]
     cols_hist = [x for x in history if x in ("C1", "C2", "C3")]
     if len(cols_hist) < 10:
@@ -213,30 +212,36 @@ def single_column_brain(session):
 
     ult_10 = cols_hist[-10:]
 
-    scores_col = {"C1": 0.0, "C2": 0.0, "C3": 0.0}
-    razoes_por_col = {"C1": [], "C2": [], "C3": []}
-    estrategia_por_col = {}
+    pares_validos = [
+        ("C1", "C2"),
+        ("C1", "C3"),
+        ("C2", "C3")
+    ]
 
-    def adicionar_ponto(col, pontos, estrategia, motivo):
-        if session["cooldown_by_col"].get(col, 0) > 0:
+    scores_par = {par: 0.0 for par in pares_validos}
+    razoes_por_par = {par: [] for par in pares_validos}
+    estrategia_por_par = {}
+
+    def adicionar_ponto_par(par, pontos, estrategia, motivo):
+        if any(session["cooldown_by_col"].get(c, 0) > 0 for c in par):
             return
         penalidade = session["strategy_penalty"].get(estrategia, 0)
         peso_final = max(0.25, pontos - (0.5 * penalidade))
-        scores_col[col] += peso_final
-        razoes_por_col[col].append(f"[{estrategia}] {motivo}")
-        if col not in estrategia_por_col:
-            estrategia_por_col[col] = estrategia
+        scores_par[par] += peso_final
+        razoes_por_par[par].append(f"[{estrategia}] {motivo}")
+        if par not in estrategia_por_par:
+            estrategia_por_par[par] = estrategia
 
     # 1. QUEBRA DE COLUNA DOMINANTE (repetição da mesma coluna)
     if len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]:
         col_repetida = cols_hist[-1]
-        for c in ("C1", "C2", "C3"):
-            if c != col_repetida:
-                adicionar_ponto(
-                    c,
+        for par in pares_validos:
+            if col_repetida not in par:
+                adicionar_ponto_par(
+                    par,
                     1.0,
                     "quebra_coluna",
-                    f"Quebra de repetição de {format_col_nome(col_repetida)} -> foco em {format_col_nome(c)} + T"
+                    f"Quebra de repetição de {format_col_nome(col_repetida)} -> foco em {format_par_cols(par)}"
                 )
 
     # 2. ALTERNÂNCIA DE COLUNAS (ritmo variado entre colunas)
@@ -246,13 +251,13 @@ def single_column_brain(session):
             and cols_hist[-2] != cols_hist[-3]
             and cols_hist[-3] != cols_hist[-4]
         ):
-            for c in ("C1", "C2", "C3"):
-                if c != cols_hist[-1]:
-                    adicionar_ponto(
-                        c,
+            for par in pares_validos:
+                if cols_hist[-1] not in par:
+                    adicionar_ponto_par(
+                        par,
                         1.0,
                         "alternancia_colunas",
-                        f"Ritmo alternado -> entrada em {format_col_nome(c)} + T"
+                        f"Ritmo alternado -> entrada em {format_par_cols(par)}"
                     )
 
     # 3. ATRASO / MENOR FREQUÊNCIA DE COLUNA NAS ÚLTIMAS 10
@@ -263,28 +268,28 @@ def single_column_brain(session):
     }
     for c in ("C1", "C2", "C3"):
         if contagens_10[c] <= 2:
-            adicionar_ponto(
-                c,
-                1.0,
-                "atraso_coluna",
-                f"{format_col_nome(c)} com apenas {contagens_10[c]}/10 saídas -> entrada + T"
-            )
+            for par in pares_validos:
+                if c in par:
+                    adicionar_ponto_par(
+                        par,
+                        1.0,
+                        "atraso_coluna",
+                        f"{format_col_nome(c)} com {contagens_10[c]}/10 saídas -> par {format_par_cols(par)}"
+                    )
 
-    # Verifica se houve erro recente parecido para exigir mais força
     ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
 
-    melhor_col = max(scores_col, key=scores_col.get)
-    melhor_score = scores_col[melhor_col]
+    melhor_par = max(scores_par, key=scores_par.get)
+    melhor_score = scores_par[melhor_par]
 
-    # Exige pelo menos 1.5 pontos de pontuação (ou 2.0 se o último erro foi nessa mesma coluna)
-    min_score_exigido = 2.0 if (ultimo_erro and ultimo_erro["col"] == melhor_col) else 1.5
-    if melhor_score < min_score_exigido or not razoes_por_col[melhor_col]:
+    min_score_exigido = 2.0 if (ultimo_erro and ultimo_erro.get("cols") == melhor_par) else 1.5
+    if melhor_score < min_score_exigido or not razoes_por_par[melhor_par]:
         return None
 
     return {
-        "col": melhor_col,
-        "strategy": estrategia_por_col.get(melhor_col, "quebra_coluna"),
-        "reason": " | ".join(razoes_por_col[melhor_col])
+        "cols": melhor_par,
+        "strategy": estrategia_por_par.get(melhor_par, "quebra_coluna"),
+        "reason": " | ".join(razoes_por_par[melhor_par])
     }
 
 
@@ -308,7 +313,6 @@ def wilson_lower_bound(wins, total):
 
 
 def strategy_validated(session):
-    # Sem filtro experimental prévio: entra direto em operações reais
     return True
 
 
@@ -321,7 +325,7 @@ def brain_status(session):
 
 
 # =====================================================
-# AVALIAÇÃO DE CICLO (COM G1 + PROTEÇÃO NO T)
+# AVALIAÇÃO DE CICLO (2 COLUNAS, SEM PROTEÇÃO NO T, ATÉ G1)
 # =====================================================
 
 def evaluate_paper(session, outcome):
@@ -333,7 +337,7 @@ def evaluate_paper(session, outcome):
         pred = session["pending_paper_g1"]
         session["pending_paper_g1"] = None
 
-        acertou = (outcome == pred["col"] or outcome == "T")
+        acertou = (outcome in pred["cols"])
         session["paper_results"].append(acertou)
         session["paper_results"] = session["paper_results"][-1000:]
 
@@ -342,10 +346,10 @@ def evaluate_paper(session, outcome):
             session["strategy_stats"][strat]["signals"] += 1
             if acertou:
                 session["strategy_stats"][strat]["wins"] += 1
-                registar_acerto_aprendizagem(session, pred["col"], strat)
+                registar_acerto_aprendizagem(session, pred["cols"], strat)
             else:
                 session["strategy_stats"][strat]["losses"] += 1
-                registrar_autopsia_loss(session, pred["col"], strat, outcome, session["history"])
+                registrar_autopsia_loss(session, pred["cols"], strat, outcome, session["history"])
         return
 
     # Fase Entrada inicial
@@ -355,40 +359,40 @@ def evaluate_paper(session, outcome):
 
     session["pending_paper"] = None
 
-    if outcome == pred["col"] or outcome == "T":
+    if outcome in pred["cols"]:
         session["paper_results"].append(True)
         session["paper_results"] = session["paper_results"][-1000:]
         strat = pred["strategy"]
         if strat in session["strategy_stats"]:
             session["strategy_stats"][strat]["signals"] += 1
             session["strategy_stats"][strat]["wins"] += 1
-        registar_acerto_aprendizagem(session, pred["col"], strat)
+        registar_acerto_aprendizagem(session, pred["cols"], strat)
     else:
-        # Falhou na Entrada -> passa para Gale 1 com proteção no T
+        # Falhou na Entrada -> passa para Gale 1 normal
         session["pending_paper_g1"] = pred
 
 
 # =====================================================
-# GESTÃO DAS OPERAÇÕES REAIS (1 COLUNA + PROTEÇÃO NO T, ATÉ G1)
+# GESTÃO DAS OPERAÇÕES REAIS (2 COLUNAS, SEM PROTEÇÃO NO T, ATÉ G1)
 # =====================================================
 
 def close_cycle(session):
-    session["active_col"] = None
+    session["active_cols"] = None
     session["active_reason"] = ""
     session["active_strategy"] = ""
     session["gale"] = 0
 
 
 def process_live_bet(chat_id, session, outcome, raw_label):
-    col = session["active_col"]
-    if col is None:
+    cols = session["active_cols"]
+    if cols is None:
         return
 
     if outcome == "T":
         session["stats"]["t_hits"] += 1
 
-    # ACERTO NA COLUNA ESCOLHIDA OU PROTEÇÃO NO T
-    if outcome == col or outcome == "T":
+    # ACERTO EM UMA DAS DUAS COLUNAS ESCOLHIDAS
+    if outcome in cols:
         strat = session["active_strategy"]
         if session["gale"] == 0:
             session["stats"]["wins"] += 1
@@ -398,40 +402,39 @@ def process_live_bet(chat_id, session, outcome, raw_label):
             session["stats"]["wins_g1"] += 1
             nivel = "GALE 1 (G1)"
 
-        protecao_txt = " (Proteção no T ativada)" if outcome == "T" else ""
-        registar_acerto_aprendizagem(session, col, strat)
+        registar_acerto_aprendizagem(session, cols, strat)
         close_cycle(session)
 
         bot.send_message(
             chat_id,
             "🟢 *GREEN / VITÓRIA CONFIRMADA!* ✨\n\n"
-            f"🏆 Resolução: {nivel}{protecao_txt}\n"
+            f"🏆 Resolução: {nivel}\n"
             f"🎯 Resultado: {raw_label} ({outcome})\n"
-            f"🧱 Coluna: {format_col_nome(col)} + Proteção no T\n\n"
+            f"🧱 Colunas: {format_par_cols(cols)}\n\n"
             "Ciclo encerrado com sucesso.",
             parse_mode="Markdown"
         )
         return
 
-    # FALHA NA ENTRADA -> VAI PARA GALE 1 (G1) COM PROTEÇÃO NO T
+    # FALHA NA ENTRADA -> VAI PARA GALE 1 (G1) NORMAL
     if session["gale"] == 0:
         session["gale"] = 1
-        total_g1 = GALE1_COLUNA + GALE1_T
+        total_g1 = GALE1_COLUNA * 2
 
         bot.send_message(
             chat_id,
             "🔴 *LOSS NA ENTRADA PRINCIPAL*\n\n"
-            "🔄 **GALE 1 (G1) COM PROTEÇÃO NO T** 🚨\n\n"
-            f"🧱 Coluna: *{format_col_nome(col)}*\n"
-            f"💰 Aposta: {GALE1_COLUNA}€ na coluna + {GALE1_T}€ no T (Total: {total_g1}€)\n"
-            "🛡️ Proteção no T ativa | Sem Gale 2.",
+            "🔄 **GALE 1 (G1)** 🚨\n\n"
+            f"🧱 Colunas: *{format_par_cols(cols)}*\n"
+            f"💰 Aposta: {GALE1_COLUNA}€ em cada coluna (Total: {total_g1}€)\n"
+            "Sem proteção no empate | Sem Gale 2.",
             parse_mode="Markdown"
         )
         return
 
     # FALHA NO GALE 1 -> AUTÓPSIA DO ERRO E PERDA FINAL DO CICLO
     strat = session["active_strategy"]
-    diagnostico = registrar_autopsia_loss(session, col, strat, outcome, session["history"])
+    diagnostico = registrar_autopsia_loss(session, cols, strat, outcome, session["history"])
     session["stats"]["losses"] += 1
     close_cycle(session)
     losses = session["stats"]["losses"]
@@ -459,17 +462,17 @@ def process_live_bet(chat_id, session, outcome, raw_label):
 
 
 # =====================================================
-# GERAR NOVA DECISÃO DE 1 COLUNA + PROTEÇÃO NO T
+# GERAR NOVA DECISÃO DE 2 COLUNAS (SEM PROTEÇÃO NO T)
 # =====================================================
 
 def generate_decision(chat_id, session):
-    if session["blocked"] or session["active_col"] is not None:
+    if session["blocked"] or session["active_cols"] is not None:
         return
 
     if session["pending_paper"] is not None or session.get("pending_paper_g1") is not None:
         return
 
-    candidate = single_column_brain(session)
+    candidate = two_columns_brain(session)
 
     if candidate is None:
         session["stats"]["observations"] += 1
@@ -477,24 +480,24 @@ def generate_decision(chat_id, session):
 
     session["pending_paper"] = candidate
 
-    col = candidate["col"]
-    session["active_col"] = col
+    cols = candidate["cols"]
+    session["active_cols"] = cols
     session["active_reason"] = candidate["reason"]
     session["active_strategy"] = candidate["strategy"]
     session["gale"] = 0
     session["stats"]["entries"] += 1
 
-    total_entrada = ENTRADA_COLUNA + ENTRADA_T
-    total_g1 = GALE1_COLUNA + GALE1_T
+    total_entrada = ENTRADA_COLUNA * 2
+    total_g1 = GALE1_COLUNA * 2
 
     bot.send_message(
         chat_id,
-        "🧠 *SINGLE COLUMN + T PROTECTION BRAIN*\n\n"
+        "🧠 *TWO COLUMNS BRAIN*\n\n"
         "⚡ ENTRADA REAL IMEDIATA (SEM FILTRO EXPERIMENTAL)\n\n"
-        f"🧱 Entrar em: *{format_col_nome(col)}* + *Proteção no T*\n"
-        f"💰 Entrada: {ENTRADA_COLUNA}€ na coluna + {ENTRADA_T}€ no T (Total: {total_entrada}€)\n"
-        f"🔄 Gale 1: {GALE1_COLUNA}€ na coluna + {GALE1_T}€ no T (Total: {total_g1}€)\n"
-        "🛡️ Proteção no T ativa | Até Gale 1\n\n"
+        f"🧱 Entrar em: *{format_par_cols(cols)}*\n"
+        f"💰 Entrada: {ENTRADA_COLUNA}€ por coluna (Total: {total_entrada}€)\n"
+        f"🔄 Gale 1: {GALE1_COLUNA}€ por coluna (Total: {total_g1}€)\n"
+        "Sem proteção no empate | Até Gale 1\n\n"
         f"🔎 Estratégia: {candidate['strategy']}\n"
         f"💡 Motivo: {candidate['reason']}",
         parse_mode="Markdown"
@@ -524,18 +527,18 @@ def receive_result(chat_id, session, outcome, raw_label):
 @bot.message_handler(commands=["start"])
 def start(message):
     sessions[message.chat.id] = nova_sessao()
-    total_entrada = ENTRADA_COLUNA + ENTRADA_T
-    total_g1 = GALE1_COLUNA + GALE1_T
+    total_entrada = ENTRADA_COLUNA * 2
+    total_g1 = GALE1_COLUNA * 2
 
     bot.reply_to(
         message,
-        "🤖 *SINGLE COLUMN + T PROTECTION BRAIN*\n\n"
-        "Sistema de 1 Coluna (C1 / C2 / C3) com Proteção no T, até Gale 1, aprendizagem pós-loss e entradas reais imediatas!\n\n"
-        f"📊 Envia as tuas {JANELA} jogadas iniciais (números 0-36 ou C1/C2/C3/T).\n\n"
+        "🤖 *TWO COLUMNS BRAIN*\n\n"
+        "Sistema de 2 Colunas (C1+C2 / C1+C3) sem proteção no empate, até Gale 1, aprendizagem pós-loss e entradas reais imediatas!\n\n"
+        f"📊 Envia as tuas {JANELA} jogadas iniciais (números 0-36 ou C1/C2/C3).\n\n"
         "Exemplo:\n"
         "`34 5 17 31 3 17 14 21 8 12`\n\n"
-        f"💰 Entrada: {ENTRADA_COLUNA}€ col + {ENTRADA_T}€ T ({total_entrada}€) | 🔄 G1: {GALE1_COLUNA}€ col + {GALE1_T}€ T ({total_g1}€)\n"
-        "🛡️ Proteção no T ativa | Sem Gale 2\n"
+        f"💰 Entrada: {ENTRADA_COLUNA}€ x 2 col ({total_entrada}€) | 🔄 G1: {GALE1_COLUNA}€ x 2 col ({total_g1}€)\n"
+        "Sem proteção no empate | Sem Gale 2\n"
         f"🚨 Máximo: {LIMITE_LOSSES} perdas finais\n\n"
         "/stats - Estatísticas detalhadas\n"
         "/status - Estado do cérebro e aprendizagem\n"
@@ -551,10 +554,10 @@ def help_command(message):
         message,
         "📖 *COMO UTILIZAR*\n\n"
         f"1. Utiliza /start.\n"
-        f"2. Envia exatamente {JANELA} jogadas iniciais (ex: números de 0 a 36 ou C1, C2, C3, T).\n"
+        f"2. Envia exatamente {JANELA} jogadas iniciais (ex: números de 0 a 36 ou C1, C2, C3).\n"
         "3. Depois envia apenas uma jogada de cada vez.\n"
-        "4. O robô manda sempre apenas UMA coluna com proteção no T, entra logo em real e aprende com os losses.\n\n"
-        "T = Empate / Proteção | C1 = 1ª Coluna | C2 = 2ª Coluna | C3 = 3ª Coluna",
+        "4. O robô manda sempre duas colunas sem proteção no empate e aprende com os losses.\n\n"
+        "C1 = 1ª Coluna | C2 = 2ª Coluna | C3 = 3ª Coluna",
         parse_mode="Markdown"
     )
 
@@ -567,17 +570,16 @@ def status_command(message):
         return
 
     status, detail = brain_status(session)
-    ativa_txt = f"{format_col_nome(session['active_col'])} + T" if session["active_col"] else "NÃO"
+    ativa_txt = format_par_cols(session["active_cols"]) if session["active_cols"] else "NÃO"
     ultimo_erro = session["error_memory"][-1]["diagnosis"] if session["error_memory"] else "Nenhum loss registado ainda"
 
     bot.reply_to(
         message,
-        "🧠 *ESTADO DO SINGLE COLUMN BRAIN*\n\n"
+        "🧠 *ESTADO DO TWO COLUMNS BRAIN*\n\n"
         f"📊 Estado: {status}\n"
         f"🔎 {detail}\n"
         f"📜 Histórico: {len(session['history'])} jogadas\n"
         f"🎯 Ciclos concluídos: {len(session['paper_results'])}\n"
-        f"🛡️ T detetados: {session['paper_t']}\n"
         f"⚡ Operação ativa: {ativa_txt}\n"
         f"🧩 Erros analisados: {len(session['error_memory'])}\n"
         f"🔍 Última autópsia: {ultimo_erro}\n"
@@ -612,11 +614,10 @@ def stats_command(message):
 
     bot.reply_to(
         message,
-        "📊 *RELATÓRIO SINGLE COLUMN BRAIN*\n\n"
+        "📊 *RELATÓRIO TWO COLUMNS BRAIN*\n\n"
         "OPERAÇÕES REAIS\n"
         f"🟢 Greens: {st['wins']} (G1: {st['wins_g1']})\n"
         f"🔴 Perdas finais: {st['losses']}/{LIMITE_LOSSES}\n"
-        f"🛡️ Proteções T batidas: {st['t_hits']}\n"
         f"🎯 Entradas: {st['entries']}\n"
         f"📈 Taxa de acerto real: {taxa_real:.2f}%\n\n"
         "HISTÓRICO DE CICLOS\n"
@@ -668,7 +669,7 @@ def handle_results(message):
     if not tokens:
         bot.reply_to(
             message,
-            "⚠️ Formato inválido.\nUtiliza números de 0 a 36 ou C1, C2, C3, T."
+            "⚠️ Formato inválido.\nUtiliza números de 0 a 36 ou C1, C2, C3."
         )
         return
 
@@ -678,7 +679,7 @@ def handle_results(message):
         if outcome is None:
             bot.reply_to(
                 message,
-                f"⚠️ Valor inválido: `{tk}`.\nUsa números de 0 a 36 ou C1, C2, C3, T.",
+                f"⚠️ Valor inválido: `{tk}`.\nUsa números de 0 a 36 ou C1, C2, C3.",
                 parse_mode="Markdown"
             )
             return
@@ -709,7 +710,7 @@ def handle_results(message):
     if len(parsed) != 1:
         bot.reply_to(
             message,
-            "⚠️ Envia apenas um resultado por mensagem (ex: 34, C1 ou T)."
+            "⚠️ Envia apenas um resultado por mensagem (ex: 34 ou C1)."
         )
         return
 
@@ -728,7 +729,7 @@ def handle_results(message):
 # =====================================================
 
 if __name__ == "__main__":
-    print("SINGLE COLUMN + T PROTECTION BRAIN ONLINE")
+    print("TWO COLUMNS BRAIN ONLINE")
 
     Thread(
         target=run_web,
