@@ -23,18 +23,18 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO (2 COLUNAS, SEM PROTEÇÃO NO T)
-ENTRADA_COLUNA = 4      # Aposta base em cada uma das 2 colunas (Entrada)
-GALE1_COLUNA = 8        # Aposta em cada uma das 2 colunas no Gale 1 (G1)
-GALE2_COLUNA = 16       # Aposta em cada uma das 2 colunas no Gale 2 (G2)
+ENTRADA_COLUNA = 4       # Aposta base em cada uma das 2 colunas (Entrada)
+GALE1_COLUNA = 8         # Aposta em cada uma das 2 colunas no Gale 1 (G1)
+GALE2_COLUNA = 16        # Aposta em cada uma das 2 colunas no Gale 2 (G2)
 
-JANELA = 10             # Jogadas iniciais para arrancar
-LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 + G2 falhados)
-TOTAL_FATORES = 8       # Total de fatores analisados
-MIN_FATORES_ENTRADA = 7 # De 8 fatores: entra apenas com 7 ou 8; com < 7 não entra
-COOLDOWN_POS_CICLO = 2  # Rondas de pausa após encerrar um ciclo para não disparar seguido
+JANELA = 10              # Jogadas iniciais para arrancar
+LIMITE_LOSSES = 2        # Máximo de ciclos perdidos (Entrada + G1 + G2 falhados)
+TOTAL_FATORES = 15       # Total de concordâncias analisadas
+MIN_FATORES_ENTRADA = 14 # De 15 fatores: entra apenas com 14 ou 15; com < 14 não entra
+COOLDOWN_POS_CICLO = 2   # Rondas de pausa após encerrar um ciclo para não disparar seguido
 
-MIN_PAPER = 0           # Sem filtro experimental prévio: entra logo em real
-MIN_RECENTES = 10       # Janela recente para consulta de estatísticas
+MIN_PAPER = 0            # Sem filtro experimental prévio: entra logo em real
+MIN_RECENTES = 10        # Janela recente para consulta de estatísticas
 
 # Sessões em memória por chat
 sessions = {}
@@ -210,7 +210,7 @@ def registar_acerto_aprendizagem(session, cols_apostadas, estrategia):
 
 
 # =====================================================
-# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (8 FATORES, MÍNIMO 7/8)
+# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (15 FATORES, MÍNIMO 14/15)
 # =====================================================
 
 def calcular_seca_coluna(cols_hist, col):
@@ -234,6 +234,7 @@ def two_columns_brain(session):
     ult_6 = cols_hist[-6:]
     ult_10 = cols_hist[-10:]
     ult_15 = cols_hist[-15:] if len(cols_hist) >= 15 else cols_hist
+    ult_20 = cols_hist[-20:] if len(cols_hist) >= 20 else cols_hist
 
     pares_validos = [
         ("C1", "C2"),
@@ -241,26 +242,15 @@ def two_columns_brain(session):
         ("C2", "C3")
     ]
 
-    contagens_6 = {
-        "C1": ult_6.count("C1"),
-        "C2": ult_6.count("C2"),
-        "C3": ult_6.count("C3")
-    }
+    contagens_6 = {c: ult_6.count(c) for c in ("C1", "C2", "C3")}
     col_viciada = max(("C1", "C2", "C3"), key=lambda c: contagens_6[c])
     ha_dominancia_6 = contagens_6[col_viciada] >= 3
 
     secas = {c: calcular_seca_coluna(cols_hist, c) for c in ("C1", "C2", "C3")}
     col_mais_atrasada = max(("C1", "C2", "C3"), key=lambda c: secas[c])
-    contagens_15 = {
-        "C1": ult_15.count("C1"),
-        "C2": ult_15.count("C2"),
-        "C3": ult_15.count("C3")
-    }
-    contagens_10 = {
-        "C1": ult_10.count("C1"),
-        "C2": ult_10.count("C2"),
-        "C3": ult_10.count("C3")
-    }
+    contagens_10 = {c: ult_10.count(c) for c in ("C1", "C2", "C3")}
+    contagens_15 = {c: ult_15.count(c) for c in ("C1", "C2", "C3")}
+    contagens_20 = {c: ult_20.count(c) for c in ("C1", "C2", "C3")}
 
     ultima_col = cols_hist[-1]
     ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
@@ -273,7 +263,7 @@ def two_columns_brain(session):
             fatores_ok = 0
             motivos = []
 
-            # F1: Estratégia / ritmo da mesa
+            # F1: Estratégia / ritmo principal da mesa
             f1_ok = False
             if estrategia == "quebra_coluna":
                 if ha_dominancia_6 and len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]:
@@ -299,8 +289,7 @@ def two_columns_brain(session):
                     and contagens_15[col_mais_atrasada] <= max(4, len(ult_15) // 3 + 1)
                 ):
                     f1_ok = True
-                    motivos.append(f"F1 atraso {format_col_nome(col_mais_atrasada)} (seca {secas[col_mais_atrasada]})")
-
+                    motivos.append(f"F1 atraso {format_col_nome(col_mais_atrasada)}")
             if f1_ok:
                 fatores_ok += 1
 
@@ -309,48 +298,92 @@ def two_columns_brain(session):
                 fatores_ok += 1
                 motivos.append("F2 seca>=2")
 
-            # F3: Baixa frequência nas últimas 10 (<= 2/10 numa das colunas do par)
+            # F3: Seca relevante (>= 3 numa das colunas do par)
+            if any(secas[c] >= 3 for c in par):
+                fatores_ok += 1
+                motivos.append("F3 seca>=3")
+
+            # F4: Baixa frequência nas últimas 10 (<= 2/10 numa das colunas do par)
             if any(contagens_10[c] <= 2 for c in par):
                 fatores_ok += 1
-                motivos.append("F3 freq<=2/10")
+                motivos.append("F4 freq10<=2")
 
-            # F4: Coerência com a última coluna saída
-            if estrategia == "atraso_coluna":
-                f4_ok = (col_mais_atrasada in par) and (ultima_col != col_mais_atrasada)
-            else:
-                f4_ok = ultima_col not in par
-            if f4_ok:
+            # F5: Soma do par nas últimas 10 não está saturada (<= 7/10)
+            if (contagens_10[par[0]] + contagens_10[par[1]]) <= 7:
                 fatores_ok += 1
-                motivos.append("F4 última col favorável")
+                motivos.append("F5 soma10<=7")
 
-            # F5: Equilíbrio na janela média de 15 jogadas (pelo menos uma coluna abaixo da média <= 4/15)
-            limite_15 = max(4, len(ult_15) // 3)
+            # F6: Coerência com a última coluna saída
+            if estrategia == "atraso_coluna":
+                f6_ok = (col_mais_atrasada in par) and (ultima_col != col_mais_atrasada)
+            else:
+                f6_ok = ultima_col not in par
+            if f6_ok:
+                fatores_ok += 1
+                motivos.append("F6 última col ok")
+
+            # F7: Equilíbrio na janela de 15 jogadas (pelo menos uma coluna <= 5/15)
+            limite_15 = max(5, len(ult_15) // 3)
             if any(contagens_15[c] <= limite_15 for c in par):
                 fatores_ok += 1
-                motivos.append(f"F5 média 15<={limite_15}")
+                motivos.append("F7 média15 ok")
 
-            # F6: Coluna excluída sem domínio extremo contínuo (<= 3 nas últimas 6)
+            # F8: Equilíbrio na janela de 20 jogadas (pelo menos uma coluna <= 7/20)
+            limite_20 = max(7, len(ult_20) // 3 + 1)
+            if any(contagens_20[c] <= limite_20 for c in par):
+                fatores_ok += 1
+                motivos.append("F8 média20 ok")
+
+            # F9: Coluna excluída sem excesso extremo nas últimas 6 (<= 3/6)
             if contagens_6[col_excluida] <= 3:
                 fatores_ok += 1
-                motivos.append("F6 excluída sem excesso")
+                motivos.append("F9 excluída<=3/6")
 
-            # F7: Penalidade da estratégia baixa (<= 1)
+            # F10: Sem tripla repetição seguida da mesma coluna nos últimos 3 giros (exceto quebra válida)
+            tripla_excluida = (
+                len(cols_hist) >= 3
+                and cols_hist[-1] == col_excluida
+                and cols_hist[-2] == col_excluida
+                and cols_hist[-3] == col_excluida
+            )
+            if not tripla_excluida or estrategia == "quebra_coluna":
+                fatores_ok += 1
+                motivos.append("F10 fluxo estável")
+
+            # F11: Nenhuma coluna do par em cooldown
+            if all(session["cooldown_by_col"].get(c, 0) == 0 for c in par):
+                fatores_ok += 1
+                motivos.append("F11 sem cooldown")
+
+            # F12: Não repete o par do último erro registado
+            if not (ultimo_erro and ultimo_erro.get("cols") == par):
+                fatores_ok += 1
+                motivos.append("F12 não repete último loss")
+
+            # F13: Penalidade da estratégia baixa (<= 1)
             penalidade = session["strategy_penalty"].get(estrategia, 0)
             if penalidade <= 1:
                 fatores_ok += 1
-                motivos.append("F7 estratégia estável")
+                motivos.append("F13 estratégia estável")
 
-            # F8: Sem cooldown ativo e sem repetir erro direto anterior
-            sem_cooldown = all(session["cooldown_by_col"].get(c, 0) == 0 for c in par)
-            nao_repete_erro = not (ultimo_erro and ultimo_erro.get("cols") == par)
-            if sem_cooldown and nao_repete_erro:
+            # F14: Par sem histórico recorrente de falhas recentes (< 2 erros na memória)
+            erros_par = sum(1 for e in session["error_memory"][-10:] if e.get("cols") == par)
+            if erros_par < 2:
                 fatores_ok += 1
-                motivos.append("F8 sem cooldown/erro")
+                motivos.append("F14 memória limpa")
 
-            # Exige pelo menos 7 em 8 fatores; se for < 7, não manda entrada
+            # F15: Descanso pós-ciclo concluído
+            if session.get("post_cycle_rest", 0) == 0:
+                fatores_ok += 1
+                motivos.append("F15 pausa cumprida")
+
+            # Exige pelo menos 14 em 15 concordâncias; se for < 14, não manda entrada
             if fatores_ok >= MIN_FATORES_ENTRADA:
                 score = fatores_ok - (0.35 * penalidade)
-                detalhe_motivo = f"Concordância {fatores_ok}/{TOTAL_FATORES} ({estrategia}) -> " + " | ".join(motivos)
+                detalhe_motivo = (
+                    f"Concordância {fatores_ok}/{TOTAL_FATORES} ({estrategia}) -> "
+                    + " | ".join(motivos[:6])
+                )
 
                 if melhor_candidato is None or score > melhor_candidato["score"]:
                     melhor_candidato = {
