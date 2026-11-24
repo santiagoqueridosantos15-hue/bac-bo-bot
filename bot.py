@@ -23,18 +23,15 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # CONFIGURAÇÕES DE GESTÃO DE BANCA E RISCO (2 COLUNAS, SEM PROTEÇÃO NO T)
-ENTRADA_COLUNA = 4       # Aposta base em cada uma das 2 colunas (Entrada)
-GALE1_COLUNA = 8         # Aposta em cada uma das 2 colunas no Gale 1 (G1)
-GALE2_COLUNA = 16        # Aposta em cada uma das 2 colunas no Gale 2 (G2)
+ENTRADA_COLUNA = 4      # Aposta base em cada uma das 2 colunas (Entrada)
+GALE1_COLUNA = 8        # Aposta em cada uma das 2 colunas no Gale 1 (G1)
+GALE2_COLUNA = 16       # Aposta em cada uma das 2 colunas no Gale 2 (G2)
 
-JANELA = 10              # Jogadas iniciais para arrancar
-LIMITE_LOSSES = 2        # Máximo de ciclos perdidos (Entrada + G1 + G2 falhados)
-TOTAL_FATORES = 40       # Total de fatores analisados
-MIN_FATORES_ENTRADA = 38 # De 40 fatores: entra apenas com 38, 39 ou 40; com < 38 não entra
-COOLDOWN_POS_CICLO = 2   # Rondas de pausa após encerrar um ciclo para não disparar seguido
+JANELA = 10             # Jogadas iniciais para arrancar
+LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 + G2 falhados)
 
-MIN_PAPER = 0            # Sem filtro experimental prévio: entra logo em real
-MIN_RECENTES = 10        # Janela recente para consulta de estatísticas
+MIN_PAPER = 0           # Sem filtro experimental prévio: entra logo em real
+MIN_RECENTES = 10       # Janela recente para consulta de estatísticas
 
 # Sessões em memória por chat
 sessions = {}
@@ -72,7 +69,6 @@ def nova_sessao():
         "active_strategy": "",
         "gale": 0,              # 0 = Entrada, 1 = Gale 1, 2 = Gale 2
         "blocked": False,
-        "post_cycle_rest": 0,
 
         # Sistema de aprendizagem / autópsia pós-loss
         "error_memory": [],
@@ -172,8 +168,6 @@ def tick_learning_cooldowns(session):
     for col in ("C1", "C2", "C3"):
         if session["cooldown_by_col"][col] > 0:
             session["cooldown_by_col"][col] -= 1
-    if session.get("post_cycle_rest", 0) > 0:
-        session["post_cycle_rest"] -= 1
 
 
 def registrar_autopsia_loss(session, cols_apostadas, estrategia, ult_resultado, contexto_cols):
@@ -210,36 +204,16 @@ def registar_acerto_aprendizagem(session, cols_apostadas, estrategia):
 
 
 # =====================================================
-# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (40 FATORES, MÍNIMO 38/40)
+# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (COM CONCORDÂNCIA E APRENDIZAGEM)
 # =====================================================
 
-def calcular_seca_coluna(cols_hist, col):
-    seca = 0
-    for item in reversed(cols_hist):
-        if item == col:
-            break
-        seca += 1
-    return seca
-
-
 def two_columns_brain(session):
-    if session.get("post_cycle_rest", 0) > 0:
-        return None
-
     history = session["history"]
     cols_hist = [x for x in history if x in ("C1", "C2", "C3")]
     if len(cols_hist) < 10:
         return None
 
-    ult_4 = cols_hist[-4:]
-    ult_5 = cols_hist[-5:]
-    ult_6 = cols_hist[-6:]
-    ult_8 = cols_hist[-8:]
     ult_10 = cols_hist[-10:]
-    ult_15 = cols_hist[-15:] if len(cols_hist) >= 15 else cols_hist
-    ult_20 = cols_hist[-20:] if len(cols_hist) >= 20 else cols_hist
-    ult_30 = cols_hist[-30:] if len(cols_hist) >= 30 else cols_hist
-    ult_40 = cols_hist[-40:] if len(cols_hist) >= 40 else cols_hist
 
     pares_validos = [
         ("C1", "C2"),
@@ -247,275 +221,90 @@ def two_columns_brain(session):
         ("C2", "C3")
     ]
 
-    contagens_6 = {c: ult_6.count(c) for c in ("C1", "C2", "C3")}
-    col_viciada = max(("C1", "C2", "C3"), key=lambda c: contagens_6[c])
-    ha_dominancia_6 = contagens_6[col_viciada] >= 3
+    scores_par = {par: 0.0 for par in pares_validos}
+    razoes_por_par = {par: [] for par in pares_validos}
+    estrategias_por_par = {par: set() for par in pares_validos}
 
-    secas = {c: calcular_seca_coluna(cols_hist, c) for c in ("C1", "C2", "C3")}
-    col_mais_atrasada = max(("C1", "C2", "C3"), key=lambda c: secas[c])
+    def adicionar_ponto_par(par, pontos, estrategia, motivo):
+        if any(session["cooldown_by_col"].get(c, 0) > 0 for c in par):
+            return
+        penalidade = session["strategy_penalty"].get(estrategia, 0)
+        peso_final = max(0.25, pontos - (0.5 * penalidade))
+        scores_par[par] += peso_final
+        razoes_por_par[par].append(f"[{estrategia}] {motivo}")
+        estrategias_por_par[par].add(estrategia)
 
-    contagens_10 = {c: ult_10.count(c) for c in ("C1", "C2", "C3")}
-    contagens_15 = {c: ult_15.count(c) for c in ("C1", "C2", "C3")}
-    contagens_20 = {c: ult_20.count(c) for c in ("C1", "C2", "C3")}
-    contagens_30 = {c: ult_30.count(c) for c in ("C1", "C2", "C3")}
-    contagens_40 = {c: ult_40.count(c) for c in ("C1", "C2", "C3")}
-
-    ultima_col = cols_hist[-1]
-    ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
-    penult_erro = session["error_memory"][-2] if len(session["error_memory"]) >= 2 else None
-    soma_penalidades = sum(session["strategy_penalty"].values())
-    melhor_candidato = None
-
-    for par in pares_validos:
-        col_excluida = next(c for c in ("C1", "C2", "C3") if c not in par)
-
-        for estrategia in ("quebra_coluna", "alternancia_colunas", "atraso_coluna"):
-            fatores_ok = 0
-            motivos = []
-
-            # F1: Estratégia / ritmo principal da mesa
-            f1_ok = False
-            if estrategia == "quebra_coluna":
-                if ha_dominancia_6 and len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]:
-                    if cols_hist[-1] not in par:
-                        f1_ok = True
-                        motivos.append(f"F1 quebra {format_col_nome(cols_hist[-1])}")
-            elif estrategia == "alternancia_colunas":
-                if (
-                    (not ha_dominancia_6)
-                    and len(ult_6) >= 4
-                    and session["strategy_penalty"].get("alternancia_colunas", 0) <= 2
-                    and ult_6[-1] != ult_6[-2]
-                    and ult_6[-2] != ult_6[-3]
-                    and ult_6[-3] != ult_6[-4]
-                ):
-                    if ult_6[-1] not in par:
-                        f1_ok = True
-                        motivos.append("F1 alternância")
-            elif estrategia == "atraso_coluna":
-                if (
-                    col_mais_atrasada in par
-                    and secas[col_mais_atrasada] >= 3
-                    and contagens_15[col_mais_atrasada] <= max(4, len(ult_15) // 3 + 1)
-                ):
-                    f1_ok = True
-                    motivos.append(f"F1 atraso {format_col_nome(col_mais_atrasada)}")
-            if f1_ok:
-                fatores_ok += 1
-
-            # F2: Seca recente (>= 2 numa das colunas do par)
-            if any(secas[c] >= 2 for c in par):
-                fatores_ok += 1
-                motivos.append("F2 seca>=2")
-
-            # F3: Seca relevante (>= 3 numa das colunas do par)
-            if any(secas[c] >= 3 for c in par):
-                fatores_ok += 1
-                motivos.append("F3 seca>=3")
-
-            # F4: Nenhuma coluna do par em seca extrema anómala (<= 9)
-            if all(secas[c] <= 9 for c in par):
-                fatores_ok += 1
-
-            # F5: Ambas as colunas do par sem bloqueio de seca crítica (<= 7)
-            if all(secas[c] <= 7 for c in par):
-                fatores_ok += 1
-
-            # F6: Baixa frequência nas últimas 10 (<= 2/10 numa das colunas do par)
-            if any(contagens_10[c] <= 2 for c in par):
-                fatores_ok += 1
-                motivos.append("F6 freq10<=2")
-
-            # F7: Soma do par nas últimas 10 não está saturada (<= 7/10)
-            soma_10 = contagens_10[par[0]] + contagens_10[par[1]]
-            if soma_10 <= 7:
-                fatores_ok += 1
-
-            # F8: Soma mínima do par nas últimas 10 (>= 4/10)
-            if soma_10 >= 4:
-                fatores_ok += 1
-
-            # F9: Nenhuma coluna do par sobrecomprada nas últimas 10 (<= 5/10)
-            if all(contagens_10[c] <= 5 for c in par):
-                fatores_ok += 1
-
-            # F10: Equilíbrio na janela de 15 jogadas (pelo menos uma coluna <= 5/15)
-            limite_15 = max(5, len(ult_15) // 3)
-            if any(contagens_15[c] <= limite_15 for c in par):
-                fatores_ok += 1
-
-            # F11: Soma do par nas últimas 15 não está saturada (<= 11/15)
-            if (contagens_15[par[0]] + contagens_15[par[1]]) <= max(11, (len(ult_15) * 3) // 4):
-                fatores_ok += 1
-
-            # F12: Nenhuma coluna do par com excesso nas últimas 15 (<= 7/15)
-            if all(contagens_15[c] <= max(7, len(ult_15) // 2) for c in par):
-                fatores_ok += 1
-
-            # F13: Equilíbrio na janela de 20 jogadas (pelo menos uma coluna <= 7/20)
-            limite_20 = max(7, len(ult_20) // 3 + 1)
-            if any(contagens_20[c] <= limite_20 for c in par):
-                fatores_ok += 1
-
-            # F14: Soma do par nas últimas 20 mantém margem (<= 15/20)
-            if (contagens_20[par[0]] + contagens_20[par[1]]) <= max(15, (len(ult_20) * 3) // 4):
-                fatores_ok += 1
-
-            # F15: Janela ampla de 30 sem excesso extremo numa coluna do par (<= 11/30)
-            limite_30 = max(11, len(ult_30) // 3 + 1)
-            if any(contagens_30[c] <= limite_30 for c in par):
-                fatores_ok += 1
-
-            # F16: Janela ampla de 40 sem excesso extremo numa coluna do par (<= 15/40)
-            limite_40 = max(15, len(ult_40) // 3 + 2)
-            if any(contagens_40[c] <= limite_40 for c in par):
-                fatores_ok += 1
-
-            # F17: Coerência com a última coluna saída
-            if estrategia == "atraso_coluna":
-                f17_ok = (col_mais_atrasada in par) and (ultima_col != col_mais_atrasada)
-            else:
-                f17_ok = ultima_col not in par
-            if f17_ok:
-                fatores_ok += 1
-                motivos.append("F17 última col ok")
-
-            # F18: Não houve 2 saídas seguidas da mesma coluna dentro do par a saturar
-            if not (len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2] and cols_hist[-1] in par):
-                fatores_ok += 1
-
-            # F19: Diversidade nas últimas 5 jogadas (>= 2 colunas distintas)
-            if len(set(ult_5)) >= 2:
-                fatores_ok += 1
-
-            # F20: Diversidade nas últimas 8 jogadas (>= 2 colunas distintas)
-            if len(set(ult_8)) >= 2:
-                fatores_ok += 1
-
-            # F21: Coluna excluída sem excesso curto nas últimas 6 (<= 3/6)
-            if contagens_6[col_excluida] <= 3:
-                fatores_ok += 1
-
-            # F22: Coluna excluída sem excesso médio nas últimas 10 (<= 5/10)
-            if contagens_10[col_excluida] <= 5:
-                fatores_ok += 1
-
-            # F23: Coluna excluída sem excesso nas últimas 15 (<= 7/15)
-            if contagens_15[col_excluida] <= max(7, len(ult_15) // 2):
-                fatores_ok += 1
-
-            # F24: Sem tripla repetição seguida da coluna excluída (exceto quebra válida)
-            tripla_excluida = (
-                len(cols_hist) >= 3
-                and cols_hist[-1] == col_excluida
-                and cols_hist[-2] == col_excluida
-                and cols_hist[-3] == col_excluida
-            )
-            if not tripla_excluida or estrategia == "quebra_coluna":
-                fatores_ok += 1
-
-            # F25: Nunca entrar contra 4 repetições seguidas da coluna excluída
-            quadrupla_excluida = (
-                len(ult_4) == 4 and all(x == col_excluida for x in ult_4)
-            )
-            if not quadrupla_excluida:
-                fatores_ok += 1
-
-            # F26: Coluna excluída sem domínio extremo nas últimas 20 (<= 10/20)
-            if contagens_20[col_excluida] <= max(10, len(ult_20) // 2):
-                fatores_ok += 1
-
-            # F27: Não houve 3 saídas seguidas da mesma coluna dentro do par
-            tripla_no_par = (
-                len(cols_hist) >= 3
-                and cols_hist[-1] in par
-                and cols_hist[-1] == cols_hist[-2] == cols_hist[-3]
-            )
-            if not tripla_no_par:
-                fatores_ok += 1
-
-            # F28: Ritmo recente das últimas 4 rondas não está totalmente travado
-            if len(set(ult_4)) >= 2:
-                fatores_ok += 1
-
-            # F29: 1ª coluna do par livre de cooldown
-            if session["cooldown_by_col"].get(par[0], 0) == 0:
-                fatores_ok += 1
-
-            # F30: 2ª coluna do par livre de cooldown
-            if session["cooldown_by_col"].get(par[1], 0) == 0:
-                fatores_ok += 1
-
-            # F31: Não repete o par do último erro registado
-            if not (ultimo_erro and ultimo_erro.get("cols") == par):
-                fatores_ok += 1
-
-            # F32: Não repete a mesma estratégia e par do último erro
-            if not (
-                ultimo_erro
-                and ultimo_erro.get("cols") == par
-                and ultimo_erro.get("strategy") == estrategia
-            ):
-                fatores_ok += 1
-
-            # F33: Não repete o par do penúltimo erro registado
-            if not (penult_erro and penult_erro.get("cols") == par):
-                fatores_ok += 1
-
-            # F34: Penalidade da estratégia baixa (<= 1)
-            penalidade = session["strategy_penalty"].get(estrategia, 0)
-            if penalidade <= 1:
-                fatores_ok += 1
-
-            # F35: Soma global de penalidades controlada (<= 4)
-            if soma_penalidades <= 4:
-                fatores_ok += 1
-
-            # F36: Memória recente limpa para o par (< 2 erros nos últimos 10)
-            erros_par_10 = sum(1 for e in session["error_memory"][-10:] if e.get("cols") == par)
-            if erros_par_10 < 2:
-                fatores_ok += 1
-
-            # F37: Memória ampla limpa para o par (< 3 erros nos últimos 20)
-            erros_par_20 = sum(1 for e in session["error_memory"][-20:] if e.get("cols") == par)
-            if erros_par_20 < 3:
-                fatores_ok += 1
-
-            # F38: Pausa pós-ciclo concluída
-            if session.get("post_cycle_rest", 0) == 0:
-                fatores_ok += 1
-
-            # F39: Histórico mínimo válido carregado (>= 10 colunas)
-            if len(cols_hist) >= JANELA:
-                fatores_ok += 1
-
-            # F40: Perdas reais abaixo do limite da sessão
-            if session["stats"]["losses"] < LIMITE_LOSSES:
-                fatores_ok += 1
-
-            # Exige pelo menos 38 em 40 concordâncias; se for < 38, não manda entrada
-            if fatores_ok >= MIN_FATORES_ENTRADA:
-                score = fatores_ok - (0.35 * penalidade)
-                detalhe_motivo = (
-                    f"Concordância {fatores_ok}/{TOTAL_FATORES} ({estrategia}) -> "
-                    + " | ".join(motivos[:4])
+    # 1. QUEBRA DE COLUNA DOMINANTE (repetição da mesma coluna)
+    if len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]:
+        col_repetida = cols_hist[-1]
+        for par in pares_validos:
+            if col_repetida not in par:
+                adicionar_ponto_par(
+                    par,
+                    1.0,
+                    "quebra_coluna",
+                    f"Quebra de repetição de {format_col_nome(col_repetida)} -> foco em {format_par_cols(par)}"
                 )
 
-                if melhor_candidato is None or score > melhor_candidato["score"]:
-                    melhor_candidato = {
-                        "cols": par,
-                        "strategy": estrategia,
-                        "reason": detalhe_motivo,
-                        "score": score
-                    }
+    # 2. ALTERNÂNCIA DE COLUNAS (ritmo variado entre colunas, se penalidade <= 2)
+    if len(cols_hist) >= 4 and session["strategy_penalty"].get("alternancia_colunas", 0) <= 2:
+        if (
+            cols_hist[-1] != cols_hist[-2]
+            and cols_hist[-2] != cols_hist[-3]
+            and cols_hist[-3] != cols_hist[-4]
+        ):
+            for par in pares_validos:
+                if cols_hist[-1] not in par:
+                    adicionar_ponto_par(
+                        par,
+                        1.0,
+                        "alternancia_colunas",
+                        f"Ritmo alternado -> entrada em {format_par_cols(par)}"
+                    )
 
-    if melhor_candidato is None:
+    # 3. ATRASO / MENOR FREQUÊNCIA DE COLUNA NAS ÚLTIMAS 10
+    contagens_10 = {
+        "C1": ult_10.count("C1"),
+        "C2": ult_10.count("C2"),
+        "C3": ult_10.count("C3")
+    }
+    for c in ("C1", "C2", "C3"):
+        if contagens_10[c] <= 2:
+            for par in pares_validos:
+                if c in par:
+                    adicionar_ponto_par(
+                        par,
+                        1.0,
+                        "atraso_coluna",
+                        f"{format_col_nome(c)} com {contagens_10[c]}/10 saídas -> par {format_par_cols(par)}"
+                    )
+
+    # Exige concordância (pelo menos 2 sinais/critérios a favor do mesmo par)
+    pares_com_concordancia = [
+        par for par in pares_validos if len(razoes_por_par[par]) >= 2
+    ]
+    if not pares_com_concordancia:
         return None
 
+    ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
+
+    melhor_par = max(pares_com_concordancia, key=lambda p: scores_par[p])
+    melhor_score = scores_par[melhor_par]
+
+    min_score_exigido = 2.0 if (ultimo_erro and ultimo_erro.get("cols") == melhor_par) else 1.5
+    if melhor_score < min_score_exigido or len(razoes_por_par[melhor_par]) < 2:
+        return None
+
+    prioridade_estrategias = ["quebra_coluna", "atraso_coluna", "alternancia_colunas"]
+    estrategia_principal = next(
+        (e for e in prioridade_estrategias if e in estrategias_por_par[melhor_par]),
+        "quebra_coluna"
+    )
+
     return {
-        "cols": melhor_candidato["cols"],
-        "strategy": melhor_candidato["strategy"],
-        "reason": melhor_candidato["reason"]
+        "cols": melhor_par,
+        "strategy": estrategia_principal,
+        "reason": " | ".join(razoes_por_par[melhor_par])
     }
 
 
@@ -546,7 +335,7 @@ def brain_status(session):
     total = len(session["paper_results"])
     return (
         "MODO REAL ATIVO (SEM FILTRO EXPERIMENTAL)",
-        f"Entradas diretas ativas (mín. {MIN_FATORES_ENTRADA}/{TOTAL_FATORES} fatores) | {total} ciclos concluídos"
+        f"Entradas diretas ativas | {total} ciclos concluídos"
     )
 
 
@@ -563,7 +352,7 @@ def evaluate_paper(session, outcome):
         pred = session["pending_paper_g2"]
         session["pending_paper_g2"] = None
 
-        acertou = (outcome in pred["cols"]) or (outcome == "Z")
+        acertou = (outcome in pred["cols"])
         session["paper_results"].append(acertou)
         session["paper_results"] = session["paper_results"][-1000:]
 
@@ -583,7 +372,7 @@ def evaluate_paper(session, outcome):
         pred = session["pending_paper_g1"]
         session["pending_paper_g1"] = None
 
-        if (outcome in pred["cols"]) or (outcome == "Z"):
+        if outcome in pred["cols"]:
             session["paper_results"].append(True)
             session["paper_results"] = session["paper_results"][-1000:]
             strat = pred["strategy"]
@@ -603,7 +392,7 @@ def evaluate_paper(session, outcome):
 
     session["pending_paper"] = None
 
-    if (outcome in pred["cols"]) or (outcome == "Z"):
+    if outcome in pred["cols"]:
         session["paper_results"].append(True)
         session["paper_results"] = session["paper_results"][-1000:]
         strat = pred["strategy"]
@@ -625,7 +414,6 @@ def close_cycle(session):
     session["active_reason"] = ""
     session["active_strategy"] = ""
     session["gale"] = 0
-    session["post_cycle_rest"] = COOLDOWN_POS_CICLO
 
 
 def process_live_bet(chat_id, session, outcome, raw_label):
@@ -636,8 +424,8 @@ def process_live_bet(chat_id, session, outcome, raw_label):
     if outcome == "T":
         session["stats"]["t_hits"] += 1
 
-    # ACERTO EM UMA DAS DUAS COLUNAS ESCOLHIDAS OU QUANDO SAI ZERO (Z)
-    if (outcome in cols) or (outcome == "Z"):
+    # ACERTO EM UMA DAS DUAS COLUNAS ESCOLHIDAS
+    if outcome in cols:
         strat = session["active_strategy"]
         if session["gale"] == 0:
             session["stats"]["wins"] += 1
