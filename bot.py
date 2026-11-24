@@ -180,14 +180,9 @@ def registrar_autopsia_loss(session, cols_apostadas, estrategia, ult_resultado, 
     if estrategia in session["strategy_penalty"]:
         session["strategy_penalty"][estrategia] = min(session["strategy_penalty"][estrategia] + 1, 3)
 
-    # Cooldown inteligente: penaliza a estratégia que falhou e aplica cooldown curto (1 ou 2 rondas)
-    # apenas na coluna dominante/inesperada que quebrou o palpite, em vez de bloquear 2 colunas por 3 jogadas
-    if ult_resultado in ("C1", "C2", "C3") and ult_resultado not in cols_apostadas:
-        session["cooldown_by_col"][ult_resultado] = max(session["cooldown_by_col"][ult_resultado], 2)
-    else:
-        for c in cols_apostadas:
-            if c in session["cooldown_by_col"]:
-                session["cooldown_by_col"][c] = max(session["cooldown_by_col"][c], 1)
+    for c in cols_apostadas:
+        if c in session["cooldown_by_col"]:
+            session["cooldown_by_col"][c] = max(session["cooldown_by_col"][c], 3)
 
     session["error_memory"].append({
         "cols": cols_apostadas,
@@ -212,23 +207,13 @@ def registar_acerto_aprendizagem(session, cols_apostadas, estrategia):
 # CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (COM CONCORDÂNCIA E APRENDIZAGEM)
 # =====================================================
 
-def calcular_seca_coluna(cols_hist, col):
-    seca = 0
-    for item in reversed(cols_hist):
-        if item == col:
-            break
-        seca += 1
-    return seca
-
-
 def two_columns_brain(session):
     history = session["history"]
     cols_hist = [x for x in history if x in ("C1", "C2", "C3")]
     if len(cols_hist) < 10:
         return None
 
-    ult_6 = cols_hist[-6:]
-    ult_15 = cols_hist[-15:] if len(cols_hist) >= 15 else cols_hist
+    ult_10 = cols_hist[-10:]
 
     pares_validos = [
         ("C1", "C2"),
@@ -249,19 +234,8 @@ def two_columns_brain(session):
         razoes_por_par[par].append(f"[{estrategia}] {motivo}")
         estrategias_por_par[par].add(estrategia)
 
-    # Detetar "mesa viciada" vs "mesa picada":
-    # Se uma coluna está a sair muito acima da média nas últimas 6 rondas (ex.: 3 ou mais vezes em 6 jogadas),
-    # o sinal de quebra faz sentido; se alterna de forma equilibrada sem dominância clara, fica em observação.
-    contagens_6 = {
-        "C1": ult_6.count("C1"),
-        "C2": ult_6.count("C2"),
-        "C3": ult_6.count("C3")
-    }
-    col_viciada = max(("C1", "C2", "C3"), key=lambda c: contagens_6[c])
-    ha_dominancia_6 = contagens_6[col_viciada] >= 3
-
-    # 1. QUEBRA DE COLUNA DOMINANTE (repetição da mesma coluna ou coluna viciada nas últimas 6)
-    if ha_dominancia_6 and (len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]):
+    # 1. QUEBRA DE COLUNA DOMINANTE (repetição da mesma coluna)
+    if len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]:
         col_repetida = cols_hist[-1]
         for par in pares_validos:
             if col_repetida not in par:
@@ -269,45 +243,43 @@ def two_columns_brain(session):
                     par,
                     1.0,
                     "quebra_coluna",
-                    f"Quebra de repetição de {format_col_nome(col_repetida)} ({contagens_6[col_repetida]}/6) -> foco em {format_par_cols(par)}"
+                    f"Quebra de repetição de {format_col_nome(col_repetida)} -> foco em {format_par_cols(par)}"
                 )
 
-    # 2. ALTERNÂNCIA DE COLUNAS (ritmo variado entre colunas nas últimas 6, se penalidade <= 2 e sem dominância viciada)
-    if (not ha_dominancia_6) and len(ult_6) >= 4 and session["strategy_penalty"].get("alternancia_colunas", 0) <= 2:
+    # 2. ALTERNÂNCIA DE COLUNAS (ritmo variado entre colunas, se penalidade <= 2)
+    if len(cols_hist) >= 4 and session["strategy_penalty"].get("alternancia_colunas", 0) <= 2:
         if (
-            ult_6[-1] != ult_6[-2]
-            and ult_6[-2] != ult_6[-3]
-            and ult_6[-3] != ult_6[-4]
+            cols_hist[-1] != cols_hist[-2]
+            and cols_hist[-2] != cols_hist[-3]
+            and cols_hist[-3] != cols_hist[-4]
         ):
             for par in pares_validos:
-                if ult_6[-1] not in par:
+                if cols_hist[-1] not in par:
                     adicionar_ponto_par(
                         par,
                         1.0,
                         "alternancia_colunas",
-                        f"Ritmo alternado nas últimas 6 -> entrada em {format_par_cols(par)}"
+                        f"Ritmo alternado -> entrada em {format_par_cols(par)}"
                     )
 
-    # 3. ATRASO / COLUNA MAIS FRIA OU ATRASADA (maior seca consecutiva + distribuição nas últimas 15)
-    secas = {c: calcular_seca_coluna(cols_hist, c) for c in ("C1", "C2", "C3")}
-    col_mais_atrasada = max(("C1", "C2", "C3"), key=lambda c: secas[c])
-    contagens_15 = {
-        "C1": ult_15.count("C1"),
-        "C2": ult_15.count("C2"),
-        "C3": ult_15.count("C3")
+    # 3. ATRASO / MENOR FREQUÊNCIA DE COLUNA NAS ÚLTIMAS 10
+    contagens_10 = {
+        "C1": ult_10.count("C1"),
+        "C2": ult_10.count("C2"),
+        "C3": ult_10.count("C3")
     }
     for c in ("C1", "C2", "C3"):
-        if c == col_mais_atrasada and secas[c] >= 3 and contagens_15[c] <= max(3, len(ult_15) // 3):
+        if contagens_10[c] <= 2:
             for par in pares_validos:
                 if c in par:
                     adicionar_ponto_par(
                         par,
                         1.0,
                         "atraso_coluna",
-                        f"{format_col_nome(c)} com seca de {secas[c]} e {contagens_15[c]}/{len(ult_15)} nas últimas -> par {format_par_cols(par)}"
+                        f"{format_col_nome(c)} com {contagens_10[c]}/10 saídas -> par {format_par_cols(par)}"
                     )
 
-    # Exige concordância (pelo menos 2 indicadores independentes a favor do mesmo par)
+    # Exige concordância (pelo menos 2 sinais/critérios a favor do mesmo par)
     pares_com_concordancia = [
         par for par in pares_validos if len(razoes_por_par[par]) >= 2
     ]
@@ -316,14 +288,8 @@ def two_columns_brain(session):
 
     ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
 
-    pares_ordenados = sorted(pares_com_concordancia, key=lambda p: scores_par[p], reverse=True)
-    melhor_par = pares_ordenados[0]
+    melhor_par = max(pares_com_concordancia, key=lambda p: scores_par[p])
     melhor_score = scores_par[melhor_par]
-    segundo_score = scores_par[pares_ordenados[1]] if len(pares_ordenados) > 1 else 0.0
-
-    # Exige diferença clara frente ao 2.º melhor par para evitar "empate técnico"
-    if len(pares_ordenados) > 1 and (melhor_score - segundo_score) < 0.25:
-        return None
 
     min_score_exigido = 2.0 if (ultimo_erro and ultimo_erro.get("cols") == melhor_par) else 1.5
     if melhor_score < min_score_exigido or len(razoes_por_par[melhor_par]) < 2:
@@ -386,7 +352,7 @@ def evaluate_paper(session, outcome):
         pred = session["pending_paper_g2"]
         session["pending_paper_g2"] = None
 
-        acertou = (outcome in pred["cols"]) or (outcome == "Z")
+        acertou = (outcome in pred["cols"])
         session["paper_results"].append(acertou)
         session["paper_results"] = session["paper_results"][-1000:]
 
@@ -406,7 +372,7 @@ def evaluate_paper(session, outcome):
         pred = session["pending_paper_g1"]
         session["pending_paper_g1"] = None
 
-        if (outcome in pred["cols"]) or (outcome == "Z"):
+        if outcome in pred["cols"]:
             session["paper_results"].append(True)
             session["paper_results"] = session["paper_results"][-1000:]
             strat = pred["strategy"]
@@ -426,7 +392,7 @@ def evaluate_paper(session, outcome):
 
     session["pending_paper"] = None
 
-    if (outcome in pred["cols"]) or (outcome == "Z"):
+    if outcome in pred["cols"]:
         session["paper_results"].append(True)
         session["paper_results"] = session["paper_results"][-1000:]
         strat = pred["strategy"]
@@ -458,8 +424,8 @@ def process_live_bet(chat_id, session, outcome, raw_label):
     if outcome == "T":
         session["stats"]["t_hits"] += 1
 
-    # ACERTO EM UMA DAS DUAS COLUNAS ESCOLHIDAS OU QUANDO SAI ZERO (Z)
-    if (outcome in cols) or (outcome == "Z"):
+    # ACERTO EM UMA DAS DUAS COLUNAS ESCOLHIDAS
+    if outcome in cols:
         strat = session["active_strategy"]
         if session["gale"] == 0:
             session["stats"]["wins"] += 1
