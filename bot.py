@@ -29,8 +29,9 @@ GALE2_COLUNA = 16       # Aposta em cada uma das 2 colunas no Gale 2 (G2)
 
 JANELA = 10             # Jogadas iniciais para arrancar
 LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 + G2 falhados)
-MIN_FATORES_ENTRADA = 4 # De 5 fatores: entra com 4 ou 5; com < 4 não entra
-COOLDOWN_POS_CICLO = 2  # Rondinhas de pausa após encerrar um ciclo para não disparar seguido
+TOTAL_FATORES = 8       # Total de fatores analisados
+MIN_FATORES_ENTRADA = 7 # De 8 fatores: entra apenas com 7 ou 8; com < 7 não entra
+COOLDOWN_POS_CICLO = 2  # Rondas de pausa após encerrar um ciclo para não disparar seguido
 
 MIN_PAPER = 0           # Sem filtro experimental prévio: entra logo em real
 MIN_RECENTES = 10       # Janela recente para consulta de estatísticas
@@ -209,7 +210,7 @@ def registar_acerto_aprendizagem(session, cols_apostadas, estrategia):
 
 
 # =====================================================
-# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (5 FATORES, MÍNIMO 4/5)
+# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (8 FATORES, MÍNIMO 7/8)
 # =====================================================
 
 def calcular_seca_coluna(cols_hist, col):
@@ -266,6 +267,8 @@ def two_columns_brain(session):
     melhor_candidato = None
 
     for par in pares_validos:
+        col_excluida = next(c for c in ("C1", "C2", "C3") if c not in par)
+
         for estrategia in ("quebra_coluna", "alternancia_colunas", "atraso_coluna"):
             fatores_ok = 0
             motivos = []
@@ -313,25 +316,41 @@ def two_columns_brain(session):
 
             # F4: Coerência com a última coluna saída
             if estrategia == "atraso_coluna":
-                f4_ok = (col_mais_atrasada in par) and (ultima_col not in par or len(par) == 2)
+                f4_ok = (col_mais_atrasada in par) and (ultima_col != col_mais_atrasada)
             else:
                 f4_ok = ultima_col not in par
             if f4_ok:
                 fatores_ok += 1
                 motivos.append("F4 última col favorável")
 
-            # F5: Sem cooldown ativo e sem repetir erro direto anterior
+            # F5: Equilíbrio na janela média de 15 jogadas (pelo menos uma coluna abaixo da média <= 4/15)
+            limite_15 = max(4, len(ult_15) // 3)
+            if any(contagens_15[c] <= limite_15 for c in par):
+                fatores_ok += 1
+                motivos.append(f"F5 média 15<={limite_15}")
+
+            # F6: Coluna excluída sem domínio extremo contínuo (<= 3 nas últimas 6)
+            if contagens_6[col_excluida] <= 3:
+                fatores_ok += 1
+                motivos.append("F6 excluída sem excesso")
+
+            # F7: Penalidade da estratégia baixa (<= 1)
+            penalidade = session["strategy_penalty"].get(estrategia, 0)
+            if penalidade <= 1:
+                fatores_ok += 1
+                motivos.append("F7 estratégia estável")
+
+            # F8: Sem cooldown ativo e sem repetir erro direto anterior
             sem_cooldown = all(session["cooldown_by_col"].get(c, 0) == 0 for c in par)
             nao_repete_erro = not (ultimo_erro and ultimo_erro.get("cols") == par)
             if sem_cooldown and nao_repete_erro:
                 fatores_ok += 1
-                motivos.append("F5 sem cooldown/erro")
+                motivos.append("F8 sem cooldown/erro")
 
-            # Exige pelo menos 4 em 5 fatores; se for < 4, não manda entrada
+            # Exige pelo menos 7 em 8 fatores; se for < 7, não manda entrada
             if fatores_ok >= MIN_FATORES_ENTRADA:
-                penalidade = session["strategy_penalty"].get(estrategia, 0)
                 score = fatores_ok - (0.35 * penalidade)
-                detalhe_motivo = f"Concordância {fatores_ok}/5 ({estrategia}) -> " + " | ".join(motivos)
+                detalhe_motivo = f"Concordância {fatores_ok}/{TOTAL_FATORES} ({estrategia}) -> " + " | ".join(motivos)
 
                 if melhor_candidato is None or score > melhor_candidato["score"]:
                     melhor_candidato = {
@@ -378,7 +397,7 @@ def brain_status(session):
     total = len(session["paper_results"])
     return (
         "MODO REAL ATIVO (SEM FILTRO EXPERIMENTAL)",
-        f"Entradas diretas ativas (mín. {MIN_FATORES_ENTRADA}/5 fatores) | {total} ciclos concluídos"
+        f"Entradas diretas ativas (mín. {MIN_FATORES_ENTRADA}/{TOTAL_FATORES} fatores) | {total} ciclos concluídos"
     )
 
 
