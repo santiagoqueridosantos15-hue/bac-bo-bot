@@ -12,7 +12,7 @@ from datetime import date, timedelta
 # para não ficarem expostas no código/GitHub.
 TELEGRAM_TOKEN = (
     os.getenv("TELEGRAM_BOT_TOKEN")
-    or "8922303337:AAEfiGQK15Cd4B4SsW-FS97Fq6QyPH2aUEs"
+    or "8922303337:AAEkDbFYIa9hyz28nMdvq0iuO0oVYotVspE"
 ).strip()
 
 FOOTBALL_DATA_KEY = (
