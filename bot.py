@@ -6,8 +6,10 @@ import requests
 from datetime import date, timedelta
 
 # ==============================================================================
-# 1. CONFIGURAÇÃO (LÊ DO RENDER SE EXISTIR, OU USA O VALOR DIRETO)
+# 1. CONFIGURAÇÃO (LÊ DO AMBIENTE SE EXISTIR, OU USA O VALOR DIRETO ABAIXO)
 # ==============================================================================
+# Dica: quando estiver tudo a funcionar, gera chaves novas e mete em Environment
+# no Render para não ficarem expostas no código/GitHub.
 TELEGRAM_TOKEN = (
     os.getenv("TELEGRAM_BOT_TOKEN")
     or "8922303337:AAGkCl7lYLSBjADEUcgGfFztMCyL0P1pT9o"
@@ -27,7 +29,7 @@ ULTIMO_PEDIDO_TS = 0.0
 
 
 # ==============================================================================
-# 2. FOOTBALL-DATA.ORG COM CACHE E PAUSA DE SEGURANÇA
+# 2. LIGAÇÃO AO FOOTBALL-DATA.ORG COM CACHE E CONTROLO DE RITMO
 # ==============================================================================
 def fd_get(endpoint: str, params: dict | None = None):
     global ULTIMO_PEDIDO_TS
@@ -106,6 +108,7 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
     pontos = 0.0
     empates = 0
     over25 = 0
+    btts = 0
     adversarios_ids = []
     h2h_por_adversario = {}
 
@@ -122,6 +125,8 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
         total_g = hg + ag
         if total_g >= 3:
             over25 += 1
+        if hg > 0 and ag > 0:
+            btts += 1
 
         if home_id == team_id:
             gf, ga, opp_id = hg, ag, away_id
@@ -144,6 +149,7 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
     forma_recente = max(-1.0, min(1.0, pontos / n))
     taxa_empate = empates / n
     taxa_over25 = over25 / n
+    taxa_btts = btts / n
 
     if tabela_info:
         if is_home:
@@ -161,6 +167,7 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
         "forma_recente": forma_recente,
         "taxa_empate": taxa_empate,
         "taxa_over25": taxa_over25,
+        "taxa_btts": taxa_btts,
         "adversarios_ids": adversarios_ids,
         "h2h_por_adversario": h2h_por_adversario,
     }
@@ -170,7 +177,7 @@ def buscar_jogos_do_dia(dia_iso: str | None = None):
     dia_base = date.fromisoformat(dia_iso) if dia_iso else date.today()
     partidas = []
 
-    for offset_dias in (0, 1, 2):
+    for offset_dias in (0, 1, 2, 3):
         alvo = (dia_base + timedelta(days=offset_dias)).isoformat()
         raw = fd_get("/matches", params={"dateFrom": alvo, "dateTo": alvo})
         lista = [
@@ -236,13 +243,14 @@ def buscar_jogos_do_dia(dia_iso: str | None = None):
             "h2h_empate_taxa": 0.28,
             "taxa_empate_equipas": (hist_casa["taxa_empate"] + hist_fora["taxa_empate"]) / 2.0,
             "taxa_over25_equipas": (hist_casa["taxa_over25"] + hist_fora["taxa_over25"]) / 2.0,
+            "taxa_btts_equipas": (hist_casa["taxa_btts"] + hist_fora["taxa_btts"]) / 2.0,
         })
 
     return jogos_preparados
 
 
 # ==============================================================================
-# 3. MOTOR DE AVALIAÇÃO (SEM CONDIÇÃO FÍSICA)
+# 3. AVALIAÇÃO MULTI-MERCADO (1, X, 2, GOLOS, BTTS, CANTOS E CARTÕES/VERMELHO)
 # ==============================================================================
 def _poisson_sample(lam: float, rng: random.Random) -> int:
     L = math.exp(-lam)
@@ -255,7 +263,7 @@ def _poisson_sample(lam: float, rng: random.Random) -> int:
             return k - 1
 
 
-def avaliar_jogo(j: dict) -> dict | None:
+def avaliar_jogo(j: dict) -> dict:
     mult_casa = max(
         0.65,
         min(1.35, 1.0 + 0.15 * j["forma_recente_casa"] + 0.15 * (j["forca_adversarios_casa"] - 1.0)),
@@ -280,45 +288,60 @@ def avaliar_jogo(j: dict) -> dict | None:
 
     rng = random.Random(hash(j["jogo"]) & 0xFFFFFFFF)
     n_sim = 8000
-    v_casa = empate = v_fora = over25 = 0
+    v_casa = empate = v_fora = over25 = under25 = btts_sim = 0
 
     for _ in range(n_sim):
         gc = _poisson_sample(lam_casa, rng)
         gf = _poisson_sample(lam_fora, rng)
+        total_g = gc + gf
         if gc > gf:
             v_casa += 1
         elif gc == gf:
             empate += 1
         else:
             v_fora += 1
-        if (gc + gf) >= 3:
+        if total_g >= 3:
             over25 += 1
+        else:
+            under25 += 1
+        if gc > 0 and gf > 0:
+            btts_sim += 1
 
     p1 = (v_casa / n_sim) * 0.85 + max(0.0, (1.0 - j["taxa_empate_equipas"]) * 0.15) * 0.5
     p2 = (v_fora / n_sim) * 0.85 + max(0.0, (1.0 - j["taxa_empate_equipas"]) * 0.15) * 0.5
     px = (empate / n_sim) * 0.70 + (0.5 * j["taxa_empate_equipas"] + 0.5 * j["h2h_empate_taxa"]) * 0.30
+    soma_1x2 = max(1e-9, p1 + px + p2)
+    p1, px, p2 = p1 / soma_1x2, px / soma_1x2, p2 / soma_1x2
 
-    soma = p1 + px + p2
-    p1, px, p2 = p1 / soma, px / soma, p2 / soma
     p_over = max(0.0, min(1.0, (over25 / n_sim) * 0.80 + j["taxa_over25_equipas"] * 0.20))
+    p_under = max(0.0, min(1.0, 1.0 - p_over))
+    p_btts = max(0.0, min(1.0, (btts_sim / n_sim) * 0.75 + j["taxa_btts_equipas"] * 0.25))
+
+    # Estimativas complementares de cantos e cartões/vermelho (baseadas em ritmo e equilíbrio)
+    ritmo_jogo = max(0.5, min(1.6, (lam_casa + lam_fora) / 2.5))
+    equilibrio = 1.0 - abs(p1 - p2)
+    p_cantos_over85 = max(0.35, min(0.78, 0.45 + 0.22 * ritmo_jogo + 0.08 * equilibrio))
+    p_cartao_vermelho = max(0.18, min(0.46, 0.22 + 0.14 * equilibrio + 0.06 * (1.0 - abs(j["forma_recente_casa"] - j["forma_recente_fora"]))))
 
     candidatos = [
         ("Vitória Casa (1)", "Resultado Final (1X2)", "Casa (1)", p1),
         ("Empate (X)", "Resultado Final (1X2)", "Empate (X)", px),
         ("Vitória Fora (2)", "Resultado Final (1X2)", "Fora (2)", p2),
         ("Mais de 2,5 golos", "Total de Golos (Over/Under 2.5)", "Mais de 2,5 golos (+2.5)", p_over),
+        ("Menos de 2,5 golos", "Total de Golos (Over/Under 2.5)", "Menos de 2,5 golos (-2.5)", p_under),
+        ("Ambas Marcam (Sim)", "Ambas as Equipas Marcam (BTTS)", "Sim", p_btts),
+        ("Mais de 8,5 cantos", "Cantos (Escanteios)", "Mais de 8,5 cantos (+8.5)", p_cantos_over85),
+        ("Cartão Vermelho no jogo", "Cartões / Expulsões", "Sim (Cartão Vermelho)", p_cartao_vermelho),
     ]
-    nome_aposta, mercado, selecao, prob = max(candidatos, key=lambda c: c[3])
 
-    if prob < 0.48:
-        return None
+    nome_aposta, mercado, selecao, prob = max(candidatos, key=lambda c: c[3])
 
     if prob >= 0.62:
         confianca = f"Alta ({prob*100:.0f}%)"
-    elif prob >= 0.54:
+    elif prob >= 0.50:
         confianca = f"Média ({prob*100:.0f}%)"
     else:
-        confianca = f"Moderada ({prob*100:.0f}%)"
+        confianca = f"Exploratória ({prob*100:.0f}%)"
 
     return {
         "jogo": j["jogo"],
@@ -341,19 +364,18 @@ def telegram_api(method: str, payload: dict):
 
 def formatar_resposta_analise() -> str:
     jogos = buscar_jogos_do_dia()
-    oportunidades = [op for j in jogos if (op := avaliar_jogo(j))]
-
-    if not oportunidades:
+    if not jogos:
         return (
             "🔍 *Análise concluída*\n\n"
-            "Não encontrei jogos com vantagem clara nos critérios avaliados."
+            "Não encontrei jogos agendados nos próximos dias na API neste momento."
         )
 
-    linhas = ["📊 *Jogos com oportunidade encontrados:*\n"]
+    oportunidades = [avaliar_jogo(j) for j in jogos]
+    linhas = ["📊 *Oportunidades encontradas (vários mercados):*\n"]
     for idx, op in enumerate(oportunidades, start=1):
         linhas.append(
             f"{idx}. *{op['jogo']}* ({op['liga']})\n"
-            f"   • *Aposta:* {op['aposta']}\n"
+            f"   • *Entrada:* {op['aposta']}\n"
             f"   • *Confiança:* {op['confianca']}\n"
             f"   • *Onde apostar:* {op['onde_apostar']}\n"
         )
@@ -387,18 +409,16 @@ def rodar_bot():
                         "chat_id": chat_id,
                         "text": (
                             "👋 *Robô ativo!*\n\n"
-                            "Envia */análise* (ou */analise*) para ver:\n"
-                            "• Jogos com oportunidade\n"
-                            "• Aposta recomendada (1, X, 2 ou Mais de 2,5 golos)\n"
-                            "• Confiança\n"
-                            "• Onde apostar (mercado e seleção)"
+                            "Envia */análise* (ou */analise*) para ver entradas em vários mercados "
+                            "(1, X, 2, golos, ambas marcam, cantos e cartões/vermelho), "
+                            "com *confiança* e *onde apostar*."
                         ),
                         "parse_mode": "Markdown",
                     })
                 elif texto.startswith("/análise") or texto.startswith("/analise"):
                     telegram_api("sendMessage", {
                         "chat_id": chat_id,
-                        "text": "⏳ A analisar jogos, época, forma, confrontos diretos e mercados...",
+                        "text": "⏳ A analisar jogos e mercados...",
                         "parse_mode": "Markdown",
                     })
                     try:
