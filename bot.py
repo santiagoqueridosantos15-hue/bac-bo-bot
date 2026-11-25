@@ -5,21 +5,37 @@ import random
 import requests
 from datetime import date, timedelta
 
-TELEGRAM_TOKEN = os.getenv("8922303337:AAEfiGQK15Cd4B4SsW-FS97Fq6QyPH2aUEs", "").strip()
-FOOTBALL_DATA_KEY = os.getenv("72a4ea44f89040fb822a5990dbb7c2ef", "").strip() or os.getenv("FOOTBALL_DATA_KEY", "").strip()
+# ==============================================================================
+# 1. CONFIGURAÇÃO SIMPLES (LÊ DO RENDER SE EXISTIR, OU USA O VALOR DIRETO)
+# ==============================================================================
+# Dica: depois de testar, gera chaves novas e mete em Environment no Render
+# para não ficarem expostas no código/GitHub.
+TELEGRAM_TOKEN = (
+    os.getenv("TELEGRAM_BOT_TOKEN")
+    or "8922303337:AAEfiGQK15Cd4B4SsW-FS97Fq6QyPH2aUEs"
+).strip()
+
+FOOTBALL_DATA_KEY = (
+    os.getenv("FOOTBALL_DATA_KEY")
+    or os.getenv("SPORTS_API_KEY")
+    or "72a4ea44f89040fb822a5990dbb7c2ef"
+).strip()
+
 BASE_URL = "https://api.football-data.org/v4"
 
 CACHE = {}
-CACHE_TTL = 1800  # 30 minutos em cache para respeitar o limite por minuto do Football-Data.org
+CACHE_TTL = 1800  # 30 minutos em cache para poupar pedidos
 ULTIMO_PEDIDO_TS = 0.0
 
 
+# ==============================================================================
+# 2. LIGAÇÃO À API FOOTBALL-DATA.ORG COM CACHE
+# ==============================================================================
 def fd_get(endpoint: str, params: dict | None = None):
-    """Pedido GET com cache e pausa de segurança entre chamadas reais."""
     global ULTIMO_PEDIDO_TS
 
-    if not FOOTBALL_DATA_KEY:
-        raise ValueError("Define SPORTS_API_KEY (ou FOOTBALL_DATA_KEY) com a tua chave do Football-Data.org.")
+    if not FOOTBALL_DATA_KEY or FOOTBALL_DATA_KEY.startswith("COLA_AQUI"):
+        raise ValueError("Falta configurar a chave do Football-Data.org.")
 
     url = f"{BASE_URL}{endpoint}"
     cache_key = (url, tuple(sorted((params or {}).items())))
@@ -28,7 +44,6 @@ def fd_get(endpoint: str, params: dict | None = None):
     if cache_key in CACHE and (agora - CACHE[cache_key]["ts"]) < CACHE_TTL:
         return CACHE[cache_key]["data"]
 
-    # Garante pelo menos 6.5s entre pedidos reais (~9 pedidos/min, abaixo do limite de 10/min)
     delta = agora - ULTIMO_PEDIDO_TS
     if delta < 6.5:
         time.sleep(6.5 - delta)
@@ -44,7 +59,6 @@ def fd_get(endpoint: str, params: dict | None = None):
 
 
 def obter_tabela_classificacao(comp_code: str) -> dict:
-    """Devolve {team_id: {pos, played, gf, ga, home_gf, home_ga, away_gf, away_ga}}."""
     try:
         data = fd_get(f"/competitions/{comp_code}/standings")
     except Exception:
@@ -54,17 +68,13 @@ def obter_tabela_classificacao(comp_code: str) -> dict:
     for standing in data.get("standings", []):
         if standing.get("type") == "TOTAL":
             for row in standing.get("table", []):
-                team = row.get("team", {})
-                tid = team.get("id")
+                tid = row.get("team", {}).get("id")
                 if tid is not None:
                     played = max(1, row.get("playedGames", 1))
-                    gf_total = row.get("goalsFor", 0)
-                    ga_total = row.get("goalsAgainst", 0)
                     mapa[tid] = {
                         "pos": row.get("position", 10),
-                        "total_teams": max(2, len(standing.get("table", []))),
-                        "media_gf": gf_total / played,
-                        "media_ga": ga_total / played,
+                        "media_gf": row.get("goalsFor", 0) / played,
+                        "media_ga": row.get("goalsAgainst", 0) / played,
                         "home_gf": None,
                         "home_ga": None,
                         "away_gf": None,
@@ -88,7 +98,6 @@ def obter_tabela_classificacao(comp_code: str) -> dict:
 
 
 def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | None):
-    """Busca últimos jogos finalizados da equipa para forma recente, H2H e taxas de golos/empates."""
     try:
         data = fd_get(f"/teams/{team_id}/matches", params={"status": "FINISHED", "limit": 10})
         jogos = data.get("matches", [])
@@ -99,7 +108,6 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
     pontos = 0.0
     empates = 0
     over25 = 0
-    total_golos_jogo = 0
     adversarios_ids = []
     h2h_por_adversario = {}
 
@@ -114,7 +122,6 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
             continue
 
         total_g = hg + ag
-        total_golos_jogo += total_g
         if total_g >= 3:
             over25 += 1
 
@@ -140,7 +147,6 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
     taxa_empate = empates / n
     taxa_over25 = over25 / n
 
-    # Médias casa/fora da época (com fallback para média geral da tabela)
     if tabela_info:
         if is_home:
             gf_epoca = tabela_info["home_gf"] if tabela_info["home_gf"] is not None else tabela_info["media_gf"]
@@ -163,7 +169,6 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
 
 
 def buscar_jogos_do_dia(dia_iso: str | None = None):
-    """Puxa jogos do dia (ou do próximo dia com jogos se hoje não houver) e prepara dados completos."""
     dia_base = date.fromisoformat(dia_iso) if dia_iso else date.today()
     partidas = []
 
@@ -175,7 +180,7 @@ def buscar_jogos_do_dia(dia_iso: str | None = None):
             if m.get("status") in ("SCHEDULED", "TIMED", "IN_PLAY", "PAUSED")
         ]
         if lista:
-            partidas = lista[:8]  # Limita para respeitar o ritmo de pedidos da API gratuita
+            partidas = lista[:8]
             break
 
     if not partidas:
@@ -199,13 +204,9 @@ def buscar_jogos_do_dia(dia_iso: str | None = None):
             tabelas_cache[comp_code] = obter_tabela_classificacao(comp_code)
         tabela = tabelas_cache.get(comp_code, {})
 
-        info_casa = tabela.get(home_id)
-        info_fora = tabela.get(away_id)
+        hist_casa = analisar_historico_equipa(home_id, True, tabela.get(home_id))
+        hist_fora = analisar_historico_equipa(away_id, False, tabela.get(away_id))
 
-        hist_casa = analisar_historico_equipa(home_id, True, info_casa)
-        hist_fora = analisar_historico_equipa(away_id, False, info_fora)
-
-        # Força média dos adversários recentes na tabela (posição melhor = força maior)
         def forca_adv(adv_ids):
             posicoes = [tabela[oid]["pos"] for oid in adv_ids if oid in tabela]
             if not posicoes:
@@ -213,11 +214,10 @@ def buscar_jogos_do_dia(dia_iso: str | None = None):
             media_pos = sum(posicoes) / len(posicoes)
             return max(0.75, min(1.25, 1.2 - (media_pos - 1) * 0.02))
 
-        forca_adv_casa = forca_adv(hist_casa["adversarios_ids"])
-        forca_adv_fora = forca_adv(hist_fora["adversarios_ids"])
-
-        # Confronto direto recente se existir nos últimos jogos registados
-        h2h_golos = hist_casa["h2h_por_adversario"].get(away_id) or hist_fora["h2h_por_adversario"].get(home_id)
+        h2h_golos = (
+            hist_casa["h2h_por_adversario"].get(away_id)
+            or hist_fora["h2h_por_adversario"].get(home_id)
+        )
         h2h_media_golos = (sum(h2h_golos) / len(h2h_golos)) if h2h_golos else 2.5
 
         nome_casa = home.get("shortName") or home.get("name", "Casa")
@@ -232,8 +232,8 @@ def buscar_jogos_do_dia(dia_iso: str | None = None):
             "golos_sofridos_fora": hist_fora["ga_epoca"],
             "forma_recente_casa": hist_casa["forma_recente"],
             "forma_recente_fora": hist_fora["forma_recente"],
-            "forca_adversarios_casa": forca_adv_casa,
-            "forca_adversarios_fora": forca_adv_fora,
+            "forca_adversarios_casa": forca_adv(hist_casa["adversarios_ids"]),
+            "forca_adversarios_fora": forca_adv(hist_fora["adversarios_ids"]),
             "h2h_golos_media": h2h_media_golos,
             "h2h_empate_taxa": 0.28,
             "taxa_empate_equipas": (hist_casa["taxa_empate"] + hist_fora["taxa_empate"]) / 2.0,
@@ -243,6 +243,9 @@ def buscar_jogos_do_dia(dia_iso: str | None = None):
     return jogos_preparados
 
 
+# ==============================================================================
+# 3. MOTOR DE AVALIAÇÃO (SEM CONDIÇÃO FÍSICA)
+# ==============================================================================
 def _poisson_sample(lam: float, rng: random.Random) -> int:
     L = math.exp(-lam)
     k = 0
@@ -328,6 +331,9 @@ def avaliar_jogo(j: dict) -> dict | None:
     }
 
 
+# ==============================================================================
+# 4. BOT TELEGRAM (/start e /análise)
+# ==============================================================================
 def telegram_api(method: str, payload: dict):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
     r = requests.post(url, json=payload, timeout=20)
@@ -342,8 +348,7 @@ def formatar_resposta_analise() -> str:
     if not oportunidades:
         return (
             "🔍 *Análise concluída*\n\n"
-            "Não encontrei jogos com vantagem clara nos critérios avaliados "
-            "(época casa/fora, forma recente, força dos adversários, H2H e frequência de golos/empates)."
+            "Não encontrei jogos com vantagem clara nos critérios avaliados."
         )
 
     linhas = ["📊 *Jogos com oportunidade encontrados:*\n"]
@@ -358,11 +363,11 @@ def formatar_resposta_analise() -> str:
 
 
 def rodar_bot():
-    if not TELEGRAM_TOKEN:
-        raise ValueError("Define TELEGRAM_BOT_TOKEN nas variáveis de ambiente.")
+    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN.startswith("COLA_AQUI"):
+        raise ValueError("Falta configurar o token do Telegram.")
 
     offset = None
-    print("Robô ligado ao Football-Data.org. À espera de /start ou /análise no Telegram...")
+    print("Robô ligado. À espera de /start ou /análise no Telegram...")
     while True:
         params = {"timeout": 30}
         if offset is not None:
@@ -382,7 +387,7 @@ def rodar_bot():
                 telegram_api("sendMessage", {
                     "chat_id": chat_id,
                     "text": (
-                        "👋 *Robô ligado ao Football-Data.org!*\n\n"
+                        "👋 *Robô ativo!*\n\n"
                         "Envia */análise* (ou */analise*) para ver:\n"
                         "• Jogos com oportunidade\n"
                         "• Aposta recomendada (1, X, 2 ou Mais de 2,5 golos)\n"
@@ -394,13 +399,13 @@ def rodar_bot():
             elif texto.startswith("/análise") or texto.startswith("/analise"):
                 telegram_api("sendMessage", {
                     "chat_id": chat_id,
-                    "text": "⏳ A puxar dados do Football-Data.org e a analisar os jogos...",
+                    "text": "⏳ A analisar jogos, época, forma, confrontos diretos e mercados...",
                     "parse_mode": "Markdown",
                 })
                 try:
                     resposta = formatar_resposta_analise()
                 except Exception as e:
-                    resposta = f"⚠️ Erro ao consultar a API: `{e}`"
+                    resposta = f"⚠️ Erro: `{e}`"
 
                 telegram_api("sendMessage", {
                     "chat_id": chat_id,
