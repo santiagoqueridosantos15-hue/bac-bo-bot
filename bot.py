@@ -29,6 +29,8 @@ GALE2_COLUNA = 16       # Aposta em cada uma das 2 colunas no Gale 2 (G2)
 
 JANELA = 10             # Jogadas iniciais para arrancar
 LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 + G2 falhados)
+COOLDOWN_CICLO = 2      # Rondinhas de pausa após encerrar um ciclo para não disparar seguido
+COOLDOWN_GALE2 = 4      # Pausa extra quando um ciclo só fecha no Gale 2
 
 MIN_PAPER = 0           # Sem filtro experimental prévio: entra logo em real
 MIN_RECENTES = 10       # Janela recente para consulta de estatísticas
@@ -69,6 +71,7 @@ def nova_sessao():
         "active_strategy": "",
         "gale": 0,              # 0 = Entrada, 1 = Gale 1, 2 = Gale 2
         "blocked": False,
+        "cycle_cooldown": 0,
 
         # Sistema de aprendizagem / autópsia pós-loss
         "error_memory": [],
@@ -168,6 +171,8 @@ def tick_learning_cooldowns(session):
     for col in ("C1", "C2", "C3"):
         if session["cooldown_by_col"][col] > 0:
             session["cooldown_by_col"][col] -= 1
+    if session.get("cycle_cooldown", 0) > 0:
+        session["cycle_cooldown"] -= 1
 
 
 def registrar_autopsia_loss(session, cols_apostadas, estrategia, ult_resultado, contexto_cols):
@@ -208,9 +213,12 @@ def registar_acerto_aprendizagem(session, cols_apostadas, estrategia):
 # =====================================================
 
 def two_columns_brain(session):
+    if session.get("cycle_cooldown", 0) > 0:
+        return None
+
     history = session["history"]
     cols_hist = [x for x in history if x in ("C1", "C2", "C3")]
-    if len(cols_hist) < 10:
+    if len(cols_hist) < 12:
         return None
 
     ult_10 = cols_hist[-10:]
@@ -279,9 +287,11 @@ def two_columns_brain(session):
                         f"{format_col_nome(c)} com {contagens_10[c]}/10 saídas -> par {format_par_cols(par)}"
                     )
 
-    # Exige concordância (pelo menos 2 sinais/critérios a favor do mesmo par)
+    # Exige concordância de pelo menos 2 estratégias diferentes no mesmo par
     pares_com_concordancia = [
-        par for par in pares_validos if len(razoes_por_par[par]) >= 2
+        par
+        for par in pares_validos
+        if len(estrategias_por_par[par]) >= 2 and len(razoes_por_par[par]) >= 2
     ]
     if not pares_com_concordancia:
         return None
@@ -292,7 +302,7 @@ def two_columns_brain(session):
     melhor_score = scores_par[melhor_par]
 
     min_score_exigido = 2.0 if (ultimo_erro and ultimo_erro.get("cols") == melhor_par) else 1.5
-    if melhor_score < min_score_exigido or len(razoes_por_par[melhor_par]) < 2:
+    if melhor_score < min_score_exigido or len(estrategias_por_par[melhor_par]) < 2:
         return None
 
     prioridade_estrategias = ["quebra_coluna", "atraso_coluna", "alternancia_colunas"]
@@ -352,7 +362,7 @@ def evaluate_paper(session, outcome):
         pred = session["pending_paper_g2"]
         session["pending_paper_g2"] = None
 
-        acertou = (outcome in pred["cols"])
+        acertou = (outcome in pred["cols"]) or (outcome == "Z")
         session["paper_results"].append(acertou)
         session["paper_results"] = session["paper_results"][-1000:]
 
@@ -372,7 +382,7 @@ def evaluate_paper(session, outcome):
         pred = session["pending_paper_g1"]
         session["pending_paper_g1"] = None
 
-        if outcome in pred["cols"]:
+        if (outcome in pred["cols"]) or (outcome == "Z"):
             session["paper_results"].append(True)
             session["paper_results"] = session["paper_results"][-1000:]
             strat = pred["strategy"]
@@ -392,7 +402,7 @@ def evaluate_paper(session, outcome):
 
     session["pending_paper"] = None
 
-    if outcome in pred["cols"]:
+    if (outcome in pred["cols"]) or (outcome == "Z"):
         session["paper_results"].append(True)
         session["paper_results"] = session["paper_results"][-1000:]
         strat = pred["strategy"]
@@ -409,11 +419,12 @@ def evaluate_paper(session, outcome):
 # GESTÃO DAS OPERAÇÕES REAIS (2 COLUNAS, SEM PROTEÇÃO NO T, ATÉ G2)
 # =====================================================
 
-def close_cycle(session):
+def close_cycle(session, pausa=COOLDOWN_CICLO):
     session["active_cols"] = None
     session["active_reason"] = ""
     session["active_strategy"] = ""
     session["gale"] = 0
+    session["cycle_cooldown"] = max(session.get("cycle_cooldown", 0), pausa)
 
 
 def process_live_bet(chat_id, session, outcome, raw_label):
@@ -424,23 +435,26 @@ def process_live_bet(chat_id, session, outcome, raw_label):
     if outcome == "T":
         session["stats"]["t_hits"] += 1
 
-    # ACERTO EM UMA DAS DUAS COLUNAS ESCOLHIDAS
-    if outcome in cols:
+    # ACERTO EM UMA DAS DUAS COLUNAS ESCOLHIDAS OU QUANDO SAI ZERO (Z)
+    if (outcome in cols) or (outcome == "Z"):
         strat = session["active_strategy"]
         if session["gale"] == 0:
             session["stats"]["wins"] += 1
             nivel = "ENTRADA PRINCIPAL"
+            pausa_pos_ciclo = COOLDOWN_CICLO
         elif session["gale"] == 1:
             session["stats"]["wins"] += 1
             session["stats"]["wins_g1"] += 1
             nivel = "GALE 1 (G1)"
+            pausa_pos_ciclo = COOLDOWN_CICLO
         else:
             session["stats"]["wins"] += 1
             session["stats"]["wins_g2"] += 1
             nivel = "GALE 2 (G2)"
+            pausa_pos_ciclo = COOLDOWN_GALE2
 
         registar_acerto_aprendizagem(session, cols, strat)
-        close_cycle(session)
+        close_cycle(session, pausa=pausa_pos_ciclo)
 
         bot.send_message(
             chat_id,
@@ -489,7 +503,7 @@ def process_live_bet(chat_id, session, outcome, raw_label):
     strat = session["active_strategy"]
     diagnostico = registrar_autopsia_loss(session, cols, strat, outcome, session["history"])
     session["stats"]["losses"] += 1
-    close_cycle(session)
+    close_cycle(session, pausa=COOLDOWN_GALE2)
     losses = session["stats"]["losses"]
 
     if losses >= LIMITE_LOSSES:
