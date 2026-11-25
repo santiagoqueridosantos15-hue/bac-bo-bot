@@ -1,743 +1,413 @@
 import os
-import re
-from math import sqrt
-from threading import Thread
+import time
+import math
+import random
+import requests
+from datetime import date, timedelta
 
-import telebot
-from flask import Flask
+TELEGRAM_TOKEN = os.getenv("8922303337:AAEfiGQK15Cd4B4SsW-FS97Fq6QyPH2aUEs", "").strip()
+FOOTBALL_DATA_KEY = os.getenv("72a4ea44f89040fb822a5990dbb7c2ef", "").strip() or os.getenv("FOOTBALL_DATA_KEY", "").strip()
+BASE_URL = "https://api.football-data.org/v4"
 
-# =====================================================
-# BAC BO SNIPER BRAIN - ZERO GALE + CONCORDÂNCIA MULTI-ESTRATÉGIA
-# Entrada: 1 Cor (P/Azul ou B/Vermelho) + T (Empate) | T = WIN | Sem Gale
-# =====================================================
-
-TOKEN = os.getenv(
-    "BOT_TOKEN",
-    "8922303337:AAEfiGQK15Cd4B4SsW-FS97Fq6QyPH2aUEs"
-)
-
-if not TOKEN or TOKEN == "COLOCA_AQUI_O_TEU_TOKEN_NOVO":
-    raise ValueError("Configura o teu token do Telegram através da variável BOT_TOKEN.")
-
-bot = telebot.TeleBot(TOKEN)
-app = Flask(__name__)
-
-# CONFIGURAÇÕES DE GESTÃO E FILTROS (SEM GALE)
-APOSTA_COR = 4.0            # Valor base na Cor (P ou B)
-APOSTA_T = 0.5              # Valor base de cobertura no T (Empate)
-
-JANELA = 12                 # Jogadas iniciais para leitura sólida da mesa
-LIMITE_LOSSES = 3           # Máximo de losses diretos na sessão (sem gale)
-ESPERA_POS_GREEN = 3        # Espera mínima de rondas após cada GREEN (não entra seguido)
-ESPERA_POS_LOSS = 3         # Espera obrigatória após cada LOSS para reavaliar a mesa
-MIN_CONCORDANCIA = 4        # Exige pelo menos 4 de 6 estratégias/motores em concordância
-
-# TRAVÕES ANTI-SEQUÊNCIA INFINITA (NUNCA SEGUE V V V V V V... NEM CHOP ETERNO)
-MAX_STREAK_SEGUIR = 3       # Só acompanha sequência até 3 seguidos; >= 4 bloqueia seguimento
-MAX_STREAK_QUEBRA = 4       # Só tenta quebra em 3 ou 4 seguidos; >= 5 bloqueia por perigo de dragon
-MAX_CHOP_SEGUIR = 4         # Só acompanha alternância (P-B-P-B) até 4 trocas; >= 5 bloqueia
-MAX_CONSEC_WINS_SAME_PATTERN = 2  # Não repete o mesmo padrão mais de 2 wins seguidos
-
-MIN_RECENTES = 10           # Janela recente para consulta de estatísticas
-
-sessions = {}
+CACHE = {}
+CACHE_TTL = 1800  # 30 minutos em cache para respeitar o limite por minuto do Football-Data.org
+ULTIMO_PEDIDO_TS = 0.0
 
 
-# =====================================================
-# SERVIDOR WEB (RENDER 24/7)
-# =====================================================
+def fd_get(endpoint: str, params: dict | None = None):
+    """Pedido GET com cache e pausa de segurança entre chamadas reais."""
+    global ULTIMO_PEDIDO_TS
 
-@app.route("/")
-def home():
-    return "BAC BO SNIPER BRAIN (ZERO GALE) - ONLINE 24/7!"
+    if not FOOTBALL_DATA_KEY:
+        raise ValueError("Define SPORTS_API_KEY (ou FOOTBALL_DATA_KEY) com a tua chave do Football-Data.org.")
 
+    url = f"{BASE_URL}{endpoint}"
+    cache_key = (url, tuple(sorted((params or {}).items())))
+    agora = time.time()
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        use_reloader=False
-    )
+    if cache_key in CACHE and (agora - CACHE[cache_key]["ts"]) < CACHE_TTL:
+        return CACHE[cache_key]["data"]
 
+    # Garante pelo menos 6.5s entre pedidos reais (~9 pedidos/min, abaixo do limite de 10/min)
+    delta = agora - ULTIMO_PEDIDO_TS
+    if delta < 6.5:
+        time.sleep(6.5 - delta)
 
-# =====================================================
-# NOVA SESSÃO
-# =====================================================
+    headers = {"X-Auth-Token": FOOTBALL_DATA_KEY}
+    resp = requests.get(url, headers=headers, params=params, timeout=20)
+    ULTIMO_PEDIDO_TS = time.time()
+    resp.raise_for_status()
 
-def nova_sessao():
-    return {
-        "history": [],              # Histórico normalizado: "P", "B", "T"
-        "awaiting_seed": True,
-
-        "active_side": None,        # Lado ativo: "P" (Jogador/Azul) ou "B" (Banca/Vermelho) + "T"
-        "active_reason": "",
-        "active_pattern": "",
-        "blocked": False,
-
-        # Pausas e travões de cadência
-        "wait_rounds": 0,           # Rondinhas obrigatórias de espera antes de avaliar nova entrada
-        "last_pattern_used": "",
-        "consecutive_pattern_wins": 0,
-
-        # Aprendizagem e arrefecimento por lado/padrão
-        "cooldown_by_side": {"P": 0, "B": 0},
-        "side_losses": {"P": 0, "B": 0},
-        "error_memory": [],
-
-        # Registo de sinais concluídos
-        "pending_signal": None,
-        "results_log": [],
-
-        # Estatísticas por motor/estratégia
-        "engine_stats": {
-            "seguimento_curto": {"wins": 0, "losses": 0},
-            "quebra_controlada": {"wins": 0, "losses": 0},
-            "alternancia_chop": {"wins": 0, "losses": 0},
-            "equilibrio_frequencia": {"wins": 0, "losses": 0},
-            "roadmap_regularidade": {"wins": 0, "losses": 0},
-            "protecao_ritmo_t": {"wins": 0, "losses": 0},
-        },
-
-        # Estatísticas gerais
-        "stats": {
-            "wins": 0,
-            "wins_by_t": 0,
-            "losses": 0,
-            "t_hits": 0,
-            "entries": 0,
-            "observations": 0
-        }
-    }
+    dados = resp.json()
+    CACHE[cache_key] = {"ts": agora, "data": dados}
+    return dados
 
 
-# =====================================================
-# NORMALIZAÇÃO DE ENTRADAS (P / B / T)
-# =====================================================
+def obter_tabela_classificacao(comp_code: str) -> dict:
+    """Devolve {team_id: {pos, played, gf, ga, home_gf, home_ga, away_gf, away_ga}}."""
+    try:
+        data = fd_get(f"/competitions/{comp_code}/standings")
+    except Exception:
+        return {}
 
-def parse_token_to_outcome(token):
-    t = token.strip().upper()
-    # Jogador / Azul -> P
-    if t in ("P", "PLAYER", "J", "JOGADOR", "A", "AZUL"):
-        return "P"
-    # Banca / Vermelho -> B
-    if t in ("B", "BANK", "BANKER", "BANCA", "V", "VERMELHO"):
-        return "B"
-    # Empate / Tie -> T
-    if t in ("T", "TIE", "E", "EMPATE", "X"):
-        return "T"
-    return None
+    mapa = {}
+    for standing in data.get("standings", []):
+        if standing.get("type") == "TOTAL":
+            for row in standing.get("table", []):
+                team = row.get("team", {})
+                tid = team.get("id")
+                if tid is not None:
+                    played = max(1, row.get("playedGames", 1))
+                    gf_total = row.get("goalsFor", 0)
+                    ga_total = row.get("goalsAgainst", 0)
+                    mapa[tid] = {
+                        "pos": row.get("position", 10),
+                        "total_teams": max(2, len(standing.get("table", []))),
+                        "media_gf": gf_total / played,
+                        "media_ga": ga_total / played,
+                        "home_gf": None,
+                        "home_ga": None,
+                        "away_gf": None,
+                        "away_ga": None,
+                    }
+
+    for standing in data.get("standings", []):
+        stype = standing.get("type")
+        if stype in ("HOME", "AWAY"):
+            for row in standing.get("table", []):
+                tid = row.get("team", {}).get("id")
+                if tid in mapa:
+                    played = max(1, row.get("playedGames", 1))
+                    if stype == "HOME":
+                        mapa[tid]["home_gf"] = row.get("goalsFor", 0) / played
+                        mapa[tid]["home_ga"] = row.get("goalsAgainst", 0) / played
+                    else:
+                        mapa[tid]["away_gf"] = row.get("goalsFor", 0) / played
+                        mapa[tid]["away_ga"] = row.get("goalsAgainst", 0) / played
+    return mapa
 
 
-def format_lado_nome(side):
-    if side == "P":
-        return "P (Jogador / Azul) + T (Empate)"
-    if side == "B":
-        return "B (Banca / Vermelho) + T (Empate)"
-    return "T (Empate)"
+def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | None):
+    """Busca últimos jogos finalizados da equipa para forma recente, H2H e taxas de golos/empates."""
+    try:
+        data = fd_get(f"/teams/{team_id}/matches", params={"status": "FINISHED", "limit": 10})
+        jogos = data.get("matches", [])
+    except Exception:
+        jogos = []
 
+    ultimos = jogos[-6:] if jogos else []
+    pontos = 0.0
+    empates = 0
+    over25 = 0
+    total_golos_jogo = 0
+    adversarios_ids = []
+    h2h_por_adversario = {}
 
-def format_cor_curta(side):
-    if side == "P":
-        return "P (Jogador/Azul)"
-    if side == "B":
-        return "B (Banca/Vermelho)"
-    return "T (Empate)"
+    for m in ultimos:
+        home_id = m.get("homeTeam", {}).get("id")
+        away_id = m.get("awayTeam", {}).get("id")
+        score = m.get("score", {}).get("fullTime", {})
+        hg = score.get("home")
+        ag = score.get("away")
 
+        if hg is None or ag is None:
+            continue
 
-# =====================================================
-# UTILITÁRIOS DE LEITURA DA MESA E ROADMAPS
-# =====================================================
+        total_g = hg + ag
+        total_golos_jogo += total_g
+        if total_g >= 3:
+            over25 += 1
 
-def calcular_streak_atual(pb_hist):
-    if not pb_hist:
-        return None, 0
-    ultimo = pb_hist[-1]
-    cont = 0
-    for item in reversed(pb_hist):
-        if item == ultimo:
-            cont += 1
+        if home_id == team_id:
+            gf, ga, opp_id = hg, ag, away_id
         else:
-            break
-    return ultimo, cont
+            gf, ga, opp_id = ag, hg, home_id
 
+        if opp_id is not None:
+            adversarios_ids.append(opp_id)
+            h2h_por_adversario.setdefault(opp_id, []).append(total_g)
 
-def calcular_alternancias_seguidas(pb_hist):
-    """Conta quantas trocas seguidas (P-B-P-B...) existem no final do histórico P/B."""
-    if len(pb_hist) < 2:
-        return 0
-    trocas = 0
-    for i in range(len(pb_hist) - 1, 0, -1):
-        if pb_hist[i] != pb_hist[i - 1]:
-            trocas += 1
+        if gf > ga:
+            pontos += 1.0
+        elif gf == ga:
+            pontos += 0.35
+            empates += 1
         else:
-            break
-    return trocas
+            pontos -= 0.6
 
+    n = max(1, len(ultimos))
+    forma_recente = max(-1.0, min(1.0, pontos / n))
+    taxa_empate = empates / n
+    taxa_over25 = over25 / n
 
-def construir_colunas_big_road(pb_hist):
-    """Agrupa o histórico P/B em colunas verticais estilo Big Road."""
-    colunas = []
-    for item in pb_hist:
-        if not colunas or colunas[-1][0] != item:
-            colunas.append([item])
+    # Médias casa/fora da época (com fallback para média geral da tabela)
+    if tabela_info:
+        if is_home:
+            gf_epoca = tabela_info["home_gf"] if tabela_info["home_gf"] is not None else tabela_info["media_gf"]
+            ga_epoca = tabela_info["home_ga"] if tabela_info["home_ga"] is not None else tabela_info["media_ga"]
         else:
-            colunas[-1].append(item)
-    return colunas
-
-
-def tick_timers(session):
-    for side in ("P", "B"):
-        if session["cooldown_by_side"][side] > 0:
-            session["cooldown_by_side"][side] -= 1
-    if session.get("wait_rounds", 0) > 0:
-        session["wait_rounds"] -= 1
-
-
-# =====================================================
-# OS 6 MOTORES DE ESTRATÉGIA COM CONCORDÂNCIA E TRAVÃO
-# =====================================================
-
-def avaliar_candidato_lado(session, lado):
-    """
-    Avalia um lado ('P' ou 'B') cruzando todas as famílias de estratégias do Bac Bo:
-    1. Seguimento curto de tendência (com trava anti-infinito <= MAX_STREAK_SEGUIR)
-    2. Quebra de sequência controlada (apenas em 3 ou 4 seguidos, nunca contra dragon >= 5)
-    3. Alternância / Chop (com trava anti-chop infinito <= MAX_CHOP_SEGUIR)
-    4. Frequência, equilíbrio e atraso na janela recente
-    5. Leitura de Roadmaps (Big Road + regularidade derivada)
-    6. Proteção contra excesso de T, cooldown e repetição excessiva do mesmo padrão
-    """
-    history = session["history"]
-    pb_hist = [x for x in history if x in ("P", "B")]
-    oposto = "B" if lado == "P" else "P"
-
-    ultimo_pb, streak = calcular_streak_atual(pb_hist)
-    trocas_seguidas = calcular_alternancias_seguidas(pb_hist)
-    colunas_br = construir_colunas_big_road(pb_hist)
-
-    ult_12_total = history[-12:]
-    t_recentes = ult_12_total.count("T")
-
-    ult_12_pb = pb_hist[-12:]
-    cont_lado = ult_12_pb.count(lado)
-    cont_oposto = ult_12_pb.count(oposto)
-
-    motores_aprovados = []
-    tags_padrao = []
-
-    # -------------------------------------------------
-    # MOTOR 1: SEGUIMENTO CURTO DE TENDÊNCIA (ANTI-INFINITO)
-    # -------------------------------------------------
-    # Só acompanha se o lado ganhou 2 ou 3 vezes seguidas. Se já vai em 4+, NÃO segue!
-    if ultimo_pb == lado and 2 <= streak <= MAX_STREAK_SEGUIR:
-        motores_aprovados.append(
-            ("seguimento_curto", f"Tendência curta em {lado} ({streak}/{MAX_STREAK_SEGUIR} máx.)")
-        )
-        tags_padrao.append("SEG")
-
-    # -------------------------------------------------
-    # MOTOR 2: QUEBRA DE SEQUÊNCIA CONTROLADA
-    # -------------------------------------------------
-    # Só entra contra sequência do oposto se estiver em 3 ou 4 seguidos (evita quebra precoce em 2 e dragon >= 5)
-    if ultimo_pb == oposto and 3 <= streak <= MAX_STREAK_QUEBRA:
-        motores_aprovados.append(
-            ("quebra_controlada", f"Quebra controlada após {streak}x {oposto}")
-        )
-        tags_padrao.append("QBR")
-
-    # -------------------------------------------------
-    # MOTOR 3: ALTERNÂNCIA / CHOP (COM TETO DE SEGURANÇA)
-    # -------------------------------------------------
-    # Quando a mesa alterna (2 a 4 trocas seguidas), entra no oposto ao último; se >= 5 trocas, trava!
-    if ultimo_pb == oposto and 2 <= trocas_seguidas <= MAX_CHOP_SEGUIR:
-        motores_aprovados.append(
-            ("alternancia_chop", f"Alternância limpa ({trocas_seguidas}/{MAX_CHOP_SEGUIR} trocas)")
-        )
-        tags_padrao.append("CHOP")
-
-    # -------------------------------------------------
-    # MOTOR 4: FREQUÊNCIA, EQUILÍBRIO E DESVIO NA JANELA
-    # -------------------------------------------------
-    # Evita entrar num lado já hiper-saturado (>= 9/12) e valida equilíbrio ou recuperação saudável
-    if (3 <= cont_lado <= 7) or (cont_oposto - cont_lado >= 4 and streak <= 3):
-        motores_aprovados.append(
-            ("equilibrio_frequencia", f"Janela P/B saudável ({lado}:{cont_lado}/12 vs {oposto}:{cont_oposto}/12)")
-        )
-        tags_padrao.append("FREQ")
-
-    # -------------------------------------------------
-    # MOTOR 5: LEITURA DE ROADMAPS (BIG ROAD + REGULARIDADE)
-    # -------------------------------------------------
-    # Analisa as últimas 4 colunas do Big Road para confirmar estrutura legível (sem caos total)
-    if len(colunas_br) >= 4:
-        tamanhos_cols = [len(c) for c in colunas_br[-4:]]
-        max_col_recente = max(tamanhos_cols)
-        # Estrutura legível: colunas entre 1 e 4 de altura e alinhada com a transição atual
-        if max_col_recente <= 4:
-            if (len(colunas_br[-1]) >= 2 and colunas_br[-1][0] == lado) or (
-                len(colunas_br[-1]) == 1 and colunas_br[-1][0] == oposto and tamanhos_cols[-2] <= 2
-            ):
-                motores_aprovados.append(
-                    ("roadmap_regularidade", f"Big Road estruturado (colunas {tamanhos_cols})")
-                )
-                tags_padrao.append("ROAD")
-
-    # -------------------------------------------------
-    # MOTOR 6: PROTEÇÃO DE RITMO, T E COOLDOWN
-    # -------------------------------------------------
-    # Valida que não há excesso de T (<= 2 nas últimas 12), sem cooldown no lado e último resultado não foi T
-    if (
-        t_recentes <= 2
-        and history[-1] != "T"
-        and session["cooldown_by_side"].get(lado, 0) == 0
-    ):
-        motores_aprovados.append(
-            ("protecao_ritmo_t", f"Mesa limpa (T:{t_recentes}/12, sem cooldown)")
-        )
-        tags_padrao.append("SAFE")
-
-    padrao_assinatura = "+".join(tags_padrao)
-
-    # Bloqueio adicional: não repetir exatamente o mesmo padrão se já ganhou 2x seguidas com ele
-    if (
-        padrao_assinatura
-        and padrao_assinatura == session.get("last_pattern_used")
-        and session.get("consecutive_pattern_wins", 0) >= MAX_CONSEC_WINS_SAME_PATTERN
-    ):
-        return None
-
-    # Bloqueio adicional: se houver sequência gigante (>= 5) na mesa, não arrisca até estabilizar
-    if streak >= 5:
-        return None
-
-    if len(motores_aprovados) < MIN_CONCORDANCIA:
-        return None
-
-    # Exige também que o Motor 6 (segurança/ritmo) esteja presente na concordância
-    engines_ids = [m[0] for m in motores_aprovados]
-    if "protecao_ritmo_t" not in engines_ids:
-        return None
-
-    score = len(motores_aprovados) - (0.35 * session["side_losses"].get(lado, 0))
-    detalhes = " | ".join(m[1] for m in motores_aprovados)
-
-    return {
-        "side": lado,
-        "engines": engines_ids,
-        "pattern": padrao_assinatura,
-        "count": len(motores_aprovados),
-        "score": score,
-        "reason": f"Concordância {len(motores_aprovados)}/6 -> {detalhes}"
-    }
-
-
-def bacbo_sniper_brain(session):
-    if session.get("wait_rounds", 0) > 0:
-        return None
-
-    history = session["history"]
-    pb_hist = [x for x in history if x in ("P", "B")]
-    if len(pb_hist) < 10:
-        return None
-
-    cand_p = avaliar_candidato_lado(session, "P")
-    cand_b = avaliar_candidato_lado(session, "B")
-
-    candidatos = [c for c in (cand_p, cand_b) if c is not None]
-    if not candidatos:
-        return None
-
-    # Se ambos passarem por algum motivo raro, escolhe apenas o de maior score claro
-    if len(candidatos) == 2 and abs(candidatos[0]["score"] - candidatos[1]["score"]) < 0.5:
-        return None
-
-    candidatos.sort(key=lambda x: x["score"], reverse=True)
-    return candidatos[0]
-
-
-# =====================================================
-# ESTATÍSTICAS E ESTADO DO CÉREBRO
-# =====================================================
-
-def wilson_lower_bound(wins, total):
-    if total == 0:
-        return 0.0
-    z = 1.96
-    p = wins / total
-    denominator = 1 + z * z / total
-    center = p + z * z / (2 * total)
-    margin = z * sqrt((p * (1 - p) / total) + (z * z / (4 * total * total)))
-    return (center - margin) / denominator
-
-
-def brain_status(session):
-    total = len(session["results_log"])
-    espera = session.get("wait_rounds", 0)
-    estado_espera = f"Pausa obrigatória: {espera} rondas" if espera > 0 else "A filtrar concordância (>=4/6)"
-    return (
-        "MODO SNIPER SEM GALE (1 COR + T = WIN)",
-        f"{total} entradas concluídas | {estado_espera}"
-    )
-
-
-# =====================================================
-# RESOLUÇÃO DA ENTRADA ÚNICA (SEM GALE | COR OU T = WIN)
-# =====================================================
-
-def process_live_bet(chat_id, session, outcome, raw_label):
-    if outcome == "T":
-        session["stats"]["t_hits"] += 1
-
-    lado = session["active_side"]
-    if lado is None:
-        return
-
-    pred = session["pending_signal"]
-    session["pending_signal"] = None
-    session["active_side"] = None
-    session["active_reason"] = ""
-    pattern_used = session["active_pattern"]
-    session["active_pattern"] = ""
-
-    # REGRA DO UTILIZADOR: VITÓRIA SE SAIR A COR ESCOLHIDA OU SE SAIR T (EMPATE)
-    acertou = (outcome == lado) or (outcome == "T")
-    session["results_log"].append(acertou)
-    session["results_log"] = session["results_log"][-1000:]
-
-    if pred:
-        for eng in pred.get("engines", []):
-            if eng in session["engine_stats"]:
-                if acertou:
-                    session["engine_stats"][eng]["wins"] += 1
-                else:
-                    session["engine_stats"][eng]["losses"] += 1
-
-    if acertou:
-        session["stats"]["wins"] += 1
-        if outcome == "T":
-            session["stats"]["wins_by_t"] += 1
-            via_txt = "EMPATE (T) — COBERTURA ACERTADA!"
-        else:
-            via_txt = f"COR EXATA ({format_cor_curta(lado)})!"
-
-        if pattern_used == session.get("last_pattern_used"):
-            session["consecutive_pattern_wins"] += 1
-        else:
-            session["last_pattern_used"] = pattern_used
-            session["consecutive_pattern_wins"] = 1
-
-        if session["side_losses"].get(lado, 0) > 0:
-            session["side_losses"][lado] -= 1
-
-        # Pausa obrigatória após GREEN para não disparar entradas seguidas sem necessidade
-        session["wait_rounds"] = ESPERA_POS_GREEN
-
-        bot.send_message(
-            chat_id,
-            "🟢 *GREEN CONFIRMADO (SEM GALE)!* ✨\n\n"
-            f"🏆 Resolução: {via_txt}\n"
-            f"🎯 Resultado da mesa: `{raw_label}` ({outcome})\n"
-            f"🎲 Entrada feita: *{format_lado_nome(lado)}*\n\n"
-            f"⏸️ A aguardar pelo menos *{ESPERA_POS_GREEN} rondas* antes de avaliar nova entrada.",
-            parse_mode="Markdown"
-        )
-        return
-
-    # LOSS DIRETO (SEM GALE)
-    session["stats"]["losses"] += 1
-    session["side_losses"][lado] = session["side_losses"].get(lado, 0) + 1
-    session["cooldown_by_side"][lado] = 4
-    session["wait_rounds"] = ESPERA_POS_LOSS
-    session["consecutive_pattern_wins"] = 0
-    session["last_pattern_used"] = ""
-
-    diagnostico = f"Saiu {format_cor_curta(outcome)} contra entrada em {format_lado_nome(lado)}"
-    session["error_memory"].append({
-        "side": lado,
-        "outcome": outcome,
-        "pattern": pattern_used,
-        "diagnosis": diagnostico
-    })
-    session["error_memory"] = session["error_memory"][-40:]
-
-    losses = session["stats"]["losses"]
-    if losses >= LIMITE_LOSSES:
-        session["blocked"] = True
-        bot.send_message(
-            chat_id,
-            "🚨 *LIMITE DE LOSSES ATINGIDO (SEM GALE)!* 🛑\n\n"
-            f"🔴 Losses na sessão: {losses}/{LIMITE_LOSSES}\n"
-            f"🧠 Diagnóstico: {diagnostico}\n\n"
-            "🛑 Sessão bloqueada para proteger a banca.\n"
-            "Utiliza /reset para iniciar uma nova sessão.",
-            parse_mode="Markdown"
-        )
+            gf_epoca = tabela_info["away_gf"] if tabela_info["away_gf"] is not None else tabela_info["media_gf"]
+            ga_epoca = tabela_info["away_ga"] if tabela_info["away_ga"] is not None else tabela_info["media_ga"]
     else:
-        bot.send_message(
-            chat_id,
-            "🔴 *LOSS DIRETO (SEM GALE — SEM DOBRAR)*\n\n"
-            f"🎯 Resultado da mesa: `{raw_label}` ({outcome})\n"
-            f"🔴 Losses na sessão: {losses}/{LIMITE_LOSSES}\n"
-            f"🧠 Ajuste: {diagnostico}\n\n"
-            f"⏸️ Pausa de *{ESPERA_POS_LOSS} rondas* e lado {lado} arrefecido.",
-            parse_mode="Markdown"
-        )
+        gf_epoca, ga_epoca = 1.3, 1.3
+
+    return {
+        "gf_epoca": gf_epoca,
+        "ga_epoca": ga_epoca,
+        "forma_recente": forma_recente,
+        "taxa_empate": taxa_empate,
+        "taxa_over25": taxa_over25,
+        "adversarios_ids": adversarios_ids,
+        "h2h_por_adversario": h2h_por_adversario,
+    }
 
 
-# =====================================================
-# GERAR NOVA DECISÃO (APENAS QUANDO HÁ ALTA CONCORDÂNCIA)
-# =====================================================
+def buscar_jogos_do_dia(dia_iso: str | None = None):
+    """Puxa jogos do dia (ou do próximo dia com jogos se hoje não houver) e prepara dados completos."""
+    dia_base = date.fromisoformat(dia_iso) if dia_iso else date.today()
+    partidas = []
 
-def generate_decision(chat_id, session):
-    if session["blocked"] or session["active_side"] is not None:
-        return
+    for offset_dias in (0, 1, 2):
+        alvo = (dia_base + timedelta(days=offset_dias)).isoformat()
+        raw = fd_get("/matches", params={"dateFrom": alvo, "dateTo": alvo})
+        lista = [
+            m for m in raw.get("matches", [])
+            if m.get("status") in ("SCHEDULED", "TIMED", "IN_PLAY", "PAUSED")
+        ]
+        if lista:
+            partidas = lista[:8]  # Limita para respeitar o ritmo de pedidos da API gratuita
+            break
 
-    candidate = bacbo_sniper_brain(session)
-    if candidate is None:
-        session["stats"]["observations"] += 1
-        return
+    if not partidas:
+        return []
 
-    lado = candidate["side"]
-    session["pending_signal"] = candidate
-    session["active_side"] = lado
-    session["active_reason"] = candidate["reason"]
-    session["active_pattern"] = candidate["pattern"]
-    session["stats"]["entries"] += 1
+    tabelas_cache = {}
+    jogos_preparados = []
 
-    bot.send_message(
-        chat_id,
-        "🎯 *BAC BO SNIPER — ENTRADA ÚNICA (SEM GALE)*\n\n"
-        f"🎲 Entrar em: *{format_lado_nome(lado)}*\n"
-        f"💰 Sugestão mão fixa: {APOSTA_COR:.2f}€ na Cor + {APOSTA_T:.2f}€ no T (Empate)\n"
-        "🛡️ *SEM GALE* | Saiu a Cor ou saiu *T* = *GREEN*\n\n"
-        f"🧩 Padrão: `{candidate['pattern']}`\n"
-        f"💡 {candidate['reason']}",
-        parse_mode="Markdown"
+    for m in partidas:
+        comp_code = m.get("competition", {}).get("code")
+        liga = m.get("competition", {}).get("name", "Competição")
+        home = m.get("homeTeam", {})
+        away = m.get("awayTeam", {})
+        home_id = home.get("id")
+        away_id = away.get("id")
+
+        if not home_id or not away_id:
+            continue
+
+        if comp_code and comp_code not in tabelas_cache:
+            tabelas_cache[comp_code] = obter_tabela_classificacao(comp_code)
+        tabela = tabelas_cache.get(comp_code, {})
+
+        info_casa = tabela.get(home_id)
+        info_fora = tabela.get(away_id)
+
+        hist_casa = analisar_historico_equipa(home_id, True, info_casa)
+        hist_fora = analisar_historico_equipa(away_id, False, info_fora)
+
+        # Força média dos adversários recentes na tabela (posição melhor = força maior)
+        def forca_adv(adv_ids):
+            posicoes = [tabela[oid]["pos"] for oid in adv_ids if oid in tabela]
+            if not posicoes:
+                return 1.0
+            media_pos = sum(posicoes) / len(posicoes)
+            return max(0.75, min(1.25, 1.2 - (media_pos - 1) * 0.02))
+
+        forca_adv_casa = forca_adv(hist_casa["adversarios_ids"])
+        forca_adv_fora = forca_adv(hist_fora["adversarios_ids"])
+
+        # Confronto direto recente se existir nos últimos jogos registados
+        h2h_golos = hist_casa["h2h_por_adversario"].get(away_id) or hist_fora["h2h_por_adversario"].get(home_id)
+        h2h_media_golos = (sum(h2h_golos) / len(h2h_golos)) if h2h_golos else 2.5
+
+        nome_casa = home.get("shortName") or home.get("name", "Casa")
+        nome_fora = away.get("shortName") or away.get("name", "Fora")
+
+        jogos_preparados.append({
+            "jogo": f"{nome_casa} vs {nome_fora}",
+            "liga": liga,
+            "golos_marcados_casa": hist_casa["gf_epoca"],
+            "golos_sofridos_casa": hist_casa["ga_epoca"],
+            "golos_marcados_fora": hist_fora["gf_epoca"],
+            "golos_sofridos_fora": hist_fora["ga_epoca"],
+            "forma_recente_casa": hist_casa["forma_recente"],
+            "forma_recente_fora": hist_fora["forma_recente"],
+            "forca_adversarios_casa": forca_adv_casa,
+            "forca_adversarios_fora": forca_adv_fora,
+            "h2h_golos_media": h2h_media_golos,
+            "h2h_empate_taxa": 0.28,
+            "taxa_empate_equipas": (hist_casa["taxa_empate"] + hist_fora["taxa_empate"]) / 2.0,
+            "taxa_over25_equipas": (hist_casa["taxa_over25"] + hist_fora["taxa_over25"]) / 2.0,
+        })
+
+    return jogos_preparados
+
+
+def _poisson_sample(lam: float, rng: random.Random) -> int:
+    L = math.exp(-lam)
+    k = 0
+    p = 1.0
+    while True:
+        k += 1
+        p *= rng.random()
+        if p <= L:
+            return k - 1
+
+
+def avaliar_jogo(j: dict) -> dict | None:
+    mult_casa = max(
+        0.65,
+        min(1.35, 1.0 + 0.15 * j["forma_recente_casa"] + 0.15 * (j["forca_adversarios_casa"] - 1.0)),
+    )
+    mult_fora = max(
+        0.65,
+        min(1.35, 1.0 + 0.15 * j["forma_recente_fora"] + 0.15 * (j["forca_adversarios_fora"] - 1.0)),
     )
 
+    lam_casa = max(0.25, ((j["golos_marcados_casa"] + j["golos_sofridos_fora"]) / 2.0) * mult_casa)
+    lam_fora = max(0.25, ((j["golos_marcados_fora"] + j["golos_sofridos_casa"]) / 2.0) * mult_fora)
 
-# =====================================================
-# RECEBER NOVA JOGADA
-# =====================================================
-
-def receive_result(chat_id, session, outcome, raw_label):
-    tick_timers(session)
-    process_live_bet(chat_id, session, outcome, raw_label)
-
-    session["history"].append(outcome)
-    session["history"] = session["history"][-250:]
-
-    if not session["blocked"]:
-        generate_decision(chat_id, session)
-
-
-# =====================================================
-# COMANDOS DO BOT
-# =====================================================
-
-@bot.message_handler(commands=["start"])
-def start(message):
-    sessions[message.chat.id] = nova_sessao()
-
-    bot.reply_to(
-        message,
-        "🤖 *BAC BO SNIPER BRAIN (ZERO GALE)*\n\n"
-        "• *Sem Gale* (mão única, sem perseguir perdas)\n"
-        "• *Sempre 1 Cor (`P`/Azul ou `B`/Vermelho) + `T` (Empate)*\n"
-        "• *`T` conta como WIN*\n"
-        "• *Concordância entre 6 motores de estratégia* + travão anti-sequência infinita\n\n"
-        f"📊 Envia as tuas *{JANELA} jogadas iniciais* (`P`, `B` ou `T` — também aceita `V`, `A` ou `E`).\n\n"
-        "Exemplo:\n"
-        "`P B P P T B P B B P T B`\n\n"
-        "/stats - Estatísticas por motor e acerto\n"
-        "/status - Estado atual e pausas\n"
-        "/reset - Reiniciar sessão\n"
-        "/ajuda - Regras do robô",
-        parse_mode="Markdown"
+    total_alvo = max(
+        0.6,
+        0.70 * (lam_casa + lam_fora)
+        + 0.15 * j["h2h_golos_media"]
+        + 0.15 * (1.8 + 2.2 * j["taxa_over25_equipas"]),
     )
+    escala = total_alvo / max(0.4, (lam_casa + lam_fora))
+    lam_casa *= escala
+    lam_fora *= escala
+
+    rng = random.Random(hash(j["jogo"]) & 0xFFFFFFFF)
+    n_sim = 8000
+    v_casa = empate = v_fora = over25 = 0
+
+    for _ in range(n_sim):
+        gc = _poisson_sample(lam_casa, rng)
+        gf = _poisson_sample(lam_fora, rng)
+        if gc > gf:
+            v_casa += 1
+        elif gc == gf:
+            empate += 1
+        else:
+            v_fora += 1
+        if (gc + gf) >= 3:
+            over25 += 1
+
+    p1 = (v_casa / n_sim) * 0.85 + max(0.0, (1.0 - j["taxa_empate_equipas"]) * 0.15) * 0.5
+    p2 = (v_fora / n_sim) * 0.85 + max(0.0, (1.0 - j["taxa_empate_equipas"]) * 0.15) * 0.5
+    px = (empate / n_sim) * 0.70 + (0.5 * j["taxa_empate_equipas"] + 0.5 * j["h2h_empate_taxa"]) * 0.30
+
+    soma = p1 + px + p2
+    p1, px, p2 = p1 / soma, px / soma, p2 / soma
+    p_over = max(0.0, min(1.0, (over25 / n_sim) * 0.80 + j["taxa_over25_equipas"] * 0.20))
+
+    candidatos = [
+        ("Vitória Casa (1)", "Resultado Final (1X2)", "Casa (1)", p1),
+        ("Empate (X)", "Resultado Final (1X2)", "Empate (X)", px),
+        ("Vitória Fora (2)", "Resultado Final (1X2)", "Fora (2)", p2),
+        ("Mais de 2,5 golos", "Total de Golos (Over/Under 2.5)", "Mais de 2,5 golos (+2.5)", p_over),
+    ]
+    nome_aposta, mercado, selecao, prob = max(candidatos, key=lambda c: c[3])
+
+    if prob < 0.48:
+        return None
+
+    if prob >= 0.62:
+        confianca = f"Alta ({prob*100:.0f}%)"
+    elif prob >= 0.54:
+        confianca = f"Média ({prob*100:.0f}%)"
+    else:
+        confianca = f"Moderada ({prob*100:.0f}%)"
+
+    return {
+        "jogo": j["jogo"],
+        "liga": j["liga"],
+        "aposta": nome_aposta,
+        "onde_apostar": f"{mercado} -> {selecao}",
+        "confianca": confianca,
+    }
 
 
-@bot.message_handler(commands=["ajuda"])
-def help_command(message):
-    bot.reply_to(
-        message,
-        "📖 *COMO FUNCIONA ESTE ROBÔ*\n\n"
-        f"1. Envia /start e cola {JANELA} resultados iniciais (`P`, `B`, `T` ou `V`, `A`, `E`).\n"
-        "2. Depois envia **1 resultado por mensagem**.\n"
-        "3. Ele **não usa Gale**: manda sempre 1 Cor + `T`, e tanto a Cor como o `T` dão **GREEN**.\n"
-        "4. Nunca segue sequências infinitas (`V V V V V V...`) e faz poucas entradas, apenas quando há concordância real.",
-        parse_mode="Markdown"
-    )
+def telegram_api(method: str, payload: dict):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
+    r = requests.post(url, json=payload, timeout=20)
+    r.raise_for_status()
+    return r.json()
 
 
-@bot.message_handler(commands=["status"])
-def status_command(message):
-    session = sessions.get(message.chat.id)
-    if session is None:
-        bot.reply_to(message, "Utiliza /start primeiro.")
-        return
+def formatar_resposta_analise() -> str:
+    jogos = buscar_jogos_do_dia()
+    oportunidades = [op for j in jogos if (op := avaliar_jogo(j))]
 
-    status, detail = brain_status(session)
-    ativa_txt = format_lado_nome(session["active_side"]) if session["active_side"] else "NENHUMA (em observação)"
-    ultimo_erro = session["error_memory"][-1]["diagnosis"] if session["error_memory"] else "Nenhum loss registado"
-
-    bot.reply_to(
-        message,
-        "🧠 *ESTADO DO BAC BO SNIPER*\n\n"
-        f"📊 Modo: {status}\n"
-        f"🔎 {detail}\n"
-        f"📜 Histórico: {len(session['history'])} rondas\n"
-        f"⚡ Entrada ativa: {ativa_txt}\n"
-        f"🔍 Último loss: {ultimo_erro}\n"
-        f"🚨 Bloqueado: {'SIM' if session['blocked'] else 'NÃO'}",
-        parse_mode="Markdown"
-    )
-
-
-@bot.message_handler(commands=["stats"])
-def stats_command(message):
-    session = sessions.get(message.chat.id)
-    if session is None:
-        bot.reply_to(message, "Utiliza /start primeiro.")
-        return
-
-    st = session["stats"]
-    resolvidas = st["wins"] + st["losses"]
-    taxa_real = (st["wins"] / resolvidas * 100) if resolvidas else 0.0
-
-    log = session["results_log"]
-    recentes = log[-MIN_RECENTES:] if log else []
-    taxa_recente = (sum(recentes) / len(recentes) * 100) if recentes else 0.0
-    wilson = (wilson_lower_bound(sum(log), len(log)) * 100) if log else 0.0
-
-    engines_txt = ""
-    for e_name, e_data in session["engine_stats"].items():
-        tot = e_data["wins"] + e_data["losses"]
-        rate = (e_data["wins"] / tot * 100) if tot else 0.0
-        engines_txt += f"• `{e_name}`: {e_data['wins']}W / {e_data['losses']}L ({rate:.1f}%)\n"
-
-    bot.reply_to(
-        message,
-        "📊 *RELATÓRIO BAC BO SNIPER (SEM GALE)*\n\n"
-        f"🟢 Greens totais: {st['wins']} (via Cor: {st['wins'] - st['wins_by_t']} | via T: {st['wins_by_t']})\n"
-        f"🔴 Losses diretos: {st['losses']}/{LIMITE_LOSSES}\n"
-        f"🎯 Entradas disparadas: {st['entries']} (Rondas observadas sem entrada: {st['observations']})\n"
-        f"📈 Taxa de acerto: {taxa_real:.2f}%\n"
-        f"📈 Últimas {MIN_RECENTES}: {taxa_recente:.2f}% | Wilson: {wilson:.2f}%\n\n"
-        "*DESEMPENHO POR MOTOR:*\n"
-        f"{engines_txt}",
-        parse_mode="Markdown"
-    )
-
-
-@bot.message_handler(commands=["reset"])
-def reset_command(message):
-    sessions[message.chat.id] = nova_sessao()
-    bot.reply_to(
-        message,
-        f"🔄 Sessão reiniciada!\n\nEnvia novamente as {JANELA} jogadas iniciais (`P`, `B` ou `T`).",
-        parse_mode="Markdown"
-    )
-
-
-# =====================================================
-# RECEBER RESULTADOS DA MESA
-# =====================================================
-
-@bot.message_handler(
-    func=lambda m: True,
-    content_types=["text"]
-)
-def handle_results(message):
-    chat_id = message.chat.id
-    session = sessions.get(chat_id)
-
-    if session is None:
-        bot.reply_to(message, "Utiliza /start para iniciar o bot.")
-        return
-
-    if session["blocked"]:
-        bot.reply_to(
-            message,
-            "🛑 Sessão bloqueada.\nUtiliza /reset para iniciar outra."
-        )
-        return
-
-    tokens = re.findall(r"\b[PBTEVAXJ]\b", message.text.upper())
-    if not tokens:
-        bot.reply_to(
-            message,
-            "⚠️ Formato inválido.\nEnvia P (Jogador/Azul), B (Banca/Vermelho) ou T (Empate)."
-        )
-        return
-
-    parsed = []
-    for tk in tokens:
-        outcome = parse_token_to_outcome(tk)
-        if outcome is None:
-            bot.reply_to(
-                message,
-                f"⚠️ Valor inválido: `{tk}`.\nUsa P, B ou T (ou V, A, E).",
-                parse_mode="Markdown"
-            )
-            return
-        parsed.append((tk, outcome))
-
-    # PRIMEIRO ENVIO: 12 JOGADAS INICIAIS
-    if session["awaiting_seed"]:
-        if len(parsed) != JANELA:
-            bot.reply_to(
-                message,
-                f"⚠️ Preciso de exatamente {JANELA} jogadas iniciais. Enviaste {len(parsed)}."
-            )
-            return
-
-        session["history"] = [col for _, col in parsed]
-        session["awaiting_seed"] = False
-
-        bot.reply_to(
-            message,
-            "🧠 *HISTÓRICO INICIAL CARREGADO!* 🚀\n\n"
-            f"As {JANELA} jogadas foram analisadas.\n"
-            "Envia agora **1 resultado de cada vez** (`P`, `B` ou `T`). O robô só vai mandar entrada quando houver alta concordância.",
-            parse_mode="Markdown"
-        )
-        return
-
-    # FLUXO NORMAL: UMA JOGADA DE CADA VEZ
-    if len(parsed) != 1:
-        bot.reply_to(
-            message,
-            "⚠️ Envia apenas um resultado por mensagem (ex: P, B ou T)."
-        )
-        return
-
-    raw_label, outcome = parsed[0]
-    receive_result(chat_id, session, outcome, raw_label)
-
-    if session["active_side"] is None and not session["blocked"]:
-        bot.reply_to(
-            message,
-            f"✅ `{raw_label}` ({outcome}) registado | Histórico: `{len(session['history'])}` | A aguardar concordância segura...",
-            parse_mode="Markdown"
+    if not oportunidades:
+        return (
+            "🔍 *Análise concluída*\n\n"
+            "Não encontrei jogos com vantagem clara nos critérios avaliados "
+            "(época casa/fora, forma recente, força dos adversários, H2H e frequência de golos/empates)."
         )
 
+    linhas = ["📊 *Jogos com oportunidade encontrados:*\n"]
+    for idx, op in enumerate(oportunidades, start=1):
+        linhas.append(
+            f"{idx}. *{op['jogo']}* ({op['liga']})\n"
+            f"   • *Aposta:* {op['aposta']}\n"
+            f"   • *Confiança:* {op['confianca']}\n"
+            f"   • *Onde apostar:* {op['onde_apostar']}\n"
+        )
+    return "\n".join(linhas)
 
-# =====================================================
-# INICIALIZAÇÃO DO BOT
-# =====================================================
+
+def rodar_bot():
+    if not TELEGRAM_TOKEN:
+        raise ValueError("Define TELEGRAM_BOT_TOKEN nas variáveis de ambiente.")
+
+    offset = None
+    print("Robô ligado ao Football-Data.org. À espera de /start ou /análise no Telegram...")
+    while True:
+        params = {"timeout": 30}
+        if offset is not None:
+            params["offset"] = offset
+
+        updates = telegram_api("getUpdates", params).get("result", [])
+        for upd in updates:
+            offset = upd["update_id"] + 1
+            msg = upd.get("message") or {}
+            chat_id = msg.get("chat", {}).get("id")
+            texto = (msg.get("text") or "").strip().lower()
+
+            if not chat_id or not texto:
+                continue
+
+            if texto.startswith("/start"):
+                telegram_api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": (
+                        "👋 *Robô ligado ao Football-Data.org!*\n\n"
+                        "Envia */análise* (ou */analise*) para ver:\n"
+                        "• Jogos com oportunidade\n"
+                        "• Aposta recomendada (1, X, 2 ou Mais de 2,5 golos)\n"
+                        "• Confiança\n"
+                        "• Onde apostar (mercado e seleção)"
+                    ),
+                    "parse_mode": "Markdown",
+                })
+            elif texto.startswith("/análise") or texto.startswith("/analise"):
+                telegram_api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "⏳ A puxar dados do Football-Data.org e a analisar os jogos...",
+                    "parse_mode": "Markdown",
+                })
+                try:
+                    resposta = formatar_resposta_analise()
+                except Exception as e:
+                    resposta = f"⚠️ Erro ao consultar a API: `{e}`"
+
+                telegram_api("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": resposta,
+                    "parse_mode": "Markdown",
+                })
+
 
 if __name__ == "__main__":
-    print("BAC BO SNIPER BRAIN (ZERO GALE) ONLINE")
-
-    Thread(
-        target=run_web,
-        daemon=True
-    ).start()
-
-    bot.infinity_polling(
-        skip_pending=True,
-        timeout=20,
-        long_polling_timeout=20
-    )
+    rodar_bot()
