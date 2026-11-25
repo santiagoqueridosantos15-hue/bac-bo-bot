@@ -8,8 +8,6 @@ from datetime import date, timedelta
 # ==============================================================================
 # 1. CONFIGURAÇÃO (LÊ DO AMBIENTE SE EXISTIR, OU USA O VALOR DIRETO ABAIXO)
 # ==============================================================================
-# Dica: quando estiver tudo a funcionar, gera chaves novas e mete em Environment
-# no Render para não ficarem expostas no código/GitHub.
 TELEGRAM_TOKEN = (
     os.getenv("TELEGRAM_BOT_TOKEN")
     or "8922303337:AAFciW_ITq1-RLVUeosPelGQLYkH7MN2tPc"
@@ -24,12 +22,12 @@ FOOTBALL_DATA_KEY = (
 BASE_URL = "https://api.football-data.org/v4"
 
 CACHE = {}
-CACHE_TTL = 1800  # 30 minutos em cache para poupar pedidos
+CACHE_TTL = 1800  # 30 minutos em cache
 ULTIMO_PEDIDO_TS = 0.0
 
 
 # ==============================================================================
-# 2. LIGAÇÃO AO FOOTBALL-DATA.ORG COM CACHE E CONTROLO DE RITMO
+# 2. FOOTBALL-DATA.ORG (SEMPRE AMANHÃ, TODO O FUTEBOL, COM CACHE)
 # ==============================================================================
 def fd_get(endpoint: str, params: dict | None = None):
     global ULTIMO_PEDIDO_TS
@@ -45,11 +43,11 @@ def fd_get(endpoint: str, params: dict | None = None):
         return CACHE[cache_key]["data"]
 
     delta = agora - ULTIMO_PEDIDO_TS
-    if delta < 6.5:
-        time.sleep(6.5 - delta)
+    if delta < 2.0:
+        time.sleep(2.0 - delta)
 
     headers = {"X-Auth-Token": FOOTBALL_DATA_KEY}
-    resp = requests.get(url, headers=headers, params=params, timeout=25)
+    resp = requests.get(url, headers=headers, params=params, timeout=20)
     ULTIMO_PEDIDO_TS = time.time()
     resp.raise_for_status()
 
@@ -99,7 +97,7 @@ def obter_tabela_classificacao(comp_code: str) -> dict:
 
 def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | None):
     try:
-        data = fd_get(f"/teams/{team_id}/matches", params={"status": "FINISHED", "limit": 10})
+        data = fd_get(f"/teams/{team_id}/matches", params={"status": "FINISHED", "limit": 8})
         jogos = data.get("matches", [])
     except Exception:
         jogos = []
@@ -175,28 +173,50 @@ def analisar_historico_equipa(team_id: int, is_home: bool, tabela_info: dict | N
 
 def buscar_jogos_do_dia(dia_iso: str | None = None):
     dia_base = date.fromisoformat(dia_iso) if dia_iso else date.today()
-    partidas = []
+    amanha = (dia_base + timedelta(days=1)).isoformat()
 
-    for offset_dias in (0, 1, 2, 3):
-        alvo = (dia_base + timedelta(days=offset_dias)).isoformat()
-        raw = fd_get("/matches", params={"dateFrom": alvo, "dateTo": alvo})
-        lista = [
-            m for m in raw.get("matches", [])
-            if m.get("status") in ("SCHEDULED", "TIMED", "IN_PLAY", "PAUSED")
-        ]
-        if lista:
-            partidas = lista[:8]
-            break
+    partidas_por_id = {}
 
+    def adicionar_partidas(lista_jogos):
+        for m in lista_jogos or []:
+            mid = m.get("id")
+            status = m.get("status")
+            if status in ("SCHEDULED", "TIMED", "IN_PLAY", "PAUSED", "POSTPONED", "SUSPENDED"):
+                chave = mid if mid is not None else f"{m.get('homeTeam', {}).get('name')}-{m.get('awayTeam', {}).get('name')}-{m.get('utcDate')}"
+                partidas_por_id[chave] = m
+
+    # 1) Todos os jogos de futebol de amanhã em /matches
+    try:
+        raw = fd_get("/matches", params={"dateFrom": amanha, "dateTo": amanha})
+        adicionar_partidas(raw.get("matches", []))
+    except Exception:
+        pass
+
+    # 2) Varre competições disponíveis para apanhar ligas, taças e restantes jogos de amanhã
+    try:
+        comps = fd_get("/competitions").get("competitions", [])
+        for comp in comps:
+            code = comp.get("code")
+            if not code:
+                continue
+            try:
+                c_raw = fd_get(f"/competitions/{code}/matches", params={"dateFrom": amanha, "dateTo": amanha})
+                adicionar_partidas(c_raw.get("matches", []))
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    partidas = list(partidas_por_id.values())
     if not partidas:
         return []
 
     tabelas_cache = {}
     jogos_preparados = []
 
-    for m in partidas:
+    for m in partidas[:12]:
         comp_code = m.get("competition", {}).get("code")
-        liga = m.get("competition", {}).get("name", "Competição")
+        liga = m.get("competition", {}).get("name", "Futebol")
         home = m.get("homeTeam", {})
         away = m.get("awayTeam", {})
         home_id = home.get("id")
@@ -231,6 +251,7 @@ def buscar_jogos_do_dia(dia_iso: str | None = None):
         jogos_preparados.append({
             "jogo": f"{nome_casa} vs {nome_fora}",
             "liga": liga,
+            "data_jogo": amanha,
             "golos_marcados_casa": hist_casa["gf_epoca"],
             "golos_sofridos_casa": hist_casa["ga_epoca"],
             "golos_marcados_fora": hist_fora["gf_epoca"],
@@ -317,11 +338,13 @@ def avaliar_jogo(j: dict) -> dict:
     p_under = max(0.0, min(1.0, 1.0 - p_over))
     p_btts = max(0.0, min(1.0, (btts_sim / n_sim) * 0.75 + j["taxa_btts_equipas"] * 0.25))
 
-    # Estimativas complementares de cantos e cartões/vermelho (baseadas em ritmo e equilíbrio)
     ritmo_jogo = max(0.5, min(1.6, (lam_casa + lam_fora) / 2.5))
     equilibrio = 1.0 - abs(p1 - p2)
     p_cantos_over85 = max(0.35, min(0.78, 0.45 + 0.22 * ritmo_jogo + 0.08 * equilibrio))
-    p_cartao_vermelho = max(0.18, min(0.46, 0.22 + 0.14 * equilibrio + 0.06 * (1.0 - abs(j["forma_recente_casa"] - j["forma_recente_fora"]))))
+    p_cartao_vermelho = max(
+        0.18,
+        min(0.46, 0.22 + 0.14 * equilibrio + 0.06 * (1.0 - abs(j["forma_recente_casa"] - j["forma_recente_fora"]))),
+    )
 
     candidatos = [
         ("Vitória Casa (1)", "Resultado Final (1X2)", "Casa (1)", p1),
@@ -346,6 +369,7 @@ def avaliar_jogo(j: dict) -> dict:
     return {
         "jogo": j["jogo"],
         "liga": j["liga"],
+        "data_jogo": j["data_jogo"],
         "aposta": nome_aposta,
         "onde_apostar": f"{mercado} -> {selecao}",
         "confianca": confianca,
@@ -363,15 +387,16 @@ def telegram_api(method: str, payload: dict):
 
 
 def formatar_resposta_analise() -> str:
+    amanha = (date.today() + timedelta(days=1)).isoformat()
     jogos = buscar_jogos_do_dia()
     if not jogos:
         return (
-            "🔍 *Análise concluída*\n\n"
-            "Não encontrei jogos agendados nos próximos dias na API neste momento."
+            f"🔍 *Análise para amanhã ({amanha})*\n\n"
+            "Não encontrei jogos de futebol agendados para amanhã na API neste momento."
         )
 
     oportunidades = [avaliar_jogo(j) for j in jogos]
-    linhas = ["📊 *Oportunidades encontradas (vários mercados):*\n"]
+    linhas = [f"📊 *Jogos de amanhã ({amanha}) — Vários mercados:*\n"]
     for idx, op in enumerate(oportunidades, start=1):
         linhas.append(
             f"{idx}. *{op['jogo']}* ({op['liga']})\n"
@@ -409,16 +434,17 @@ def rodar_bot():
                         "chat_id": chat_id,
                         "text": (
                             "👋 *Robô ativo!*\n\n"
-                            "Envia */análise* (ou */analise*) para ver entradas em vários mercados "
-                            "(1, X, 2, golos, ambas marcam, cantos e cartões/vermelho), "
-                            "com *confiança* e *onde apostar*."
+                            "Envia */análise* (ou */analise*) para ver os jogos de *amanhã* "
+                            "(qualquer competição de futebol) com entradas em vários mercados "
+                            "(1, X, 2, golos, BTTS, cantos e cartões/vermelho), "
+                            "*confiança* e *onde apostar*."
                         ),
                         "parse_mode": "Markdown",
                     })
                 elif texto.startswith("/análise") or texto.startswith("/analise"):
                     telegram_api("sendMessage", {
                         "chat_id": chat_id,
-                        "text": "⏳ A analisar jogos e mercados...",
+                        "text": "⏳ A buscar jogos de amanhã e a avaliar mercados...",
                         "parse_mode": "Markdown",
                     })
                     try:
