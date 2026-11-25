@@ -29,8 +29,8 @@ GALE2_COLUNA = 16       # Aposta em cada uma das 2 colunas no Gale 2 (G2)
 
 JANELA = 10             # Jogadas iniciais para arrancar
 LIMITE_LOSSES = 2       # Máximo de ciclos perdidos (Entrada + G1 + G2 falhados)
-COOLDOWN_CICLO = 2      # Rondinhas de pausa após encerrar um ciclo para não disparar seguido
-COOLDOWN_GALE2 = 4      # Pausa extra quando um ciclo só fecha no Gale 2
+ESPERA_POS_GREEN = 2    # Espera mínima de 2 rondas após GREEN antes de poder entrar de novo
+MIN_CONCORDANCIA = 3    # Mínimo de critérios em concordância na estratégia única
 
 MIN_PAPER = 0           # Sem filtro experimental prévio: entra logo em real
 MIN_RECENTES = 10       # Janela recente para consulta de estatísticas
@@ -71,14 +71,12 @@ def nova_sessao():
         "active_strategy": "",
         "gale": 0,              # 0 = Entrada, 1 = Gale 1, 2 = Gale 2
         "blocked": False,
-        "cycle_cooldown": 0,
+        "green_wait_rounds": 0, # Rondinhas restantes de espera obrigatória após GREEN
 
         # Sistema de aprendizagem / autópsia pós-loss
         "error_memory": [],
         "strategy_penalty": {
-            "quebra_coluna": 0,
-            "alternancia_colunas": 0,
-            "atraso_coluna": 0
+            "quebra_coluna": 0
         },
         "cooldown_by_col": {
             "C1": 0,
@@ -97,9 +95,7 @@ def nova_sessao():
 
         # Estatísticas individuais por estratégia
         "strategy_stats": {
-            "quebra_coluna": {"wins": 0, "losses": 0, "signals": 0},
-            "alternancia_colunas": {"wins": 0, "losses": 0, "signals": 0},
-            "atraso_coluna": {"wins": 0, "losses": 0, "signals": 0}
+            "quebra_coluna": {"wins": 0, "losses": 0, "signals": 0}
         },
 
         # Estatísticas gerais das operações reais
@@ -171,8 +167,8 @@ def tick_learning_cooldowns(session):
     for col in ("C1", "C2", "C3"):
         if session["cooldown_by_col"][col] > 0:
             session["cooldown_by_col"][col] -= 1
-    if session.get("cycle_cooldown", 0) > 0:
-        session["cycle_cooldown"] -= 1
+    if session.get("green_wait_rounds", 0) > 0:
+        session["green_wait_rounds"] -= 1
 
 
 def registrar_autopsia_loss(session, cols_apostadas, estrategia, ult_resultado, contexto_cols):
@@ -209,19 +205,43 @@ def registar_acerto_aprendizagem(session, cols_apostadas, estrategia):
 
 
 # =====================================================
-# CÉREBRO DE 2 COLUNAS SEM PROTEÇÃO NO T (COM CONCORDÂNCIA E APRENDIZAGEM)
+# CÉREBRO DE 2 COLUNAS (1 ESTRATÉGIA + CONCORDÂNCIA OBRIGATÓRIA)
 # =====================================================
 
+def calcular_seca_coluna(cols_hist, col):
+    seca = 0
+    for item in reversed(cols_hist):
+        if item == col:
+            break
+        seca += 1
+    return seca
+
+
 def two_columns_brain(session):
-    if session.get("cycle_cooldown", 0) > 0:
+    # Após GREEN, espera obrigatoriamente pelo menos 2 rondas; se já passaram e não houver entrada válida, aguarda
+    if session.get("green_wait_rounds", 0) > 0:
         return None
 
     history = session["history"]
     cols_hist = [x for x in history if x in ("C1", "C2", "C3")]
-    if len(cols_hist) < 12:
+    if len(cols_hist) < 10:
         return None
 
+    # Estratégia única: quebra_coluna (quebra de repetição/dominância de coluna)
+    if len(cols_hist) < 2 or cols_hist[-1] != cols_hist[-2]:
+        return None
+
+    col_repetida = cols_hist[-1]
+    ult_6 = cols_hist[-6:]
     ult_10 = cols_hist[-10:]
+    contagens_6 = {c: ult_6.count(c) for c in ("C1", "C2", "C3")}
+    contagens_10 = {c: ult_10.count(c) for c in ("C1", "C2", "C3")}
+    secas = {c: calcular_seca_coluna(cols_hist, c) for c in ("C1", "C2", "C3")}
+    ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
+
+    # Só atua quando a coluna repetida tem tração recente (>= 2 nas últimas 6) e o par não contém essa coluna
+    if contagens_6[col_repetida] < 2:
+        return None
 
     pares_validos = [
         ("C1", "C2"),
@@ -229,92 +249,53 @@ def two_columns_brain(session):
         ("C2", "C3")
     ]
 
-    scores_par = {par: 0.0 for par in pares_validos}
-    razoes_por_par = {par: [] for par in pares_validos}
-    estrategias_por_par = {par: set() for par in pares_validos}
+    melhor_candidato = None
 
-    def adicionar_ponto_par(par, pontos, estrategia, motivo):
-        if any(session["cooldown_by_col"].get(c, 0) > 0 for c in par):
-            return
-        penalidade = session["strategy_penalty"].get(estrategia, 0)
-        peso_final = max(0.25, pontos - (0.5 * penalidade))
-        scores_par[par] += peso_final
-        razoes_por_par[par].append(f"[{estrategia}] {motivo}")
-        estrategias_por_par[par].add(estrategia)
+    for par in pares_validos:
+        if col_repetida in par:
+            continue
 
-    # 1. QUEBRA DE COLUNA DOMINANTE (repetição da mesma coluna)
-    if len(cols_hist) >= 2 and cols_hist[-1] == cols_hist[-2]:
-        col_repetida = cols_hist[-1]
-        for par in pares_validos:
-            if col_repetida not in par:
-                adicionar_ponto_par(
-                    par,
-                    1.0,
-                    "quebra_coluna",
-                    f"Quebra de repetição de {format_col_nome(col_repetida)} -> foco em {format_par_cols(par)}"
-                )
+        concordancias = []
 
-    # 2. ALTERNÂNCIA DE COLUNAS (ritmo variado entre colunas, se penalidade <= 2)
-    if len(cols_hist) >= 4 and session["strategy_penalty"].get("alternancia_colunas", 0) <= 2:
-        if (
-            cols_hist[-1] != cols_hist[-2]
-            and cols_hist[-2] != cols_hist[-3]
-            and cols_hist[-3] != cols_hist[-4]
-        ):
-            for par in pares_validos:
-                if cols_hist[-1] not in par:
-                    adicionar_ponto_par(
-                        par,
-                        1.0,
-                        "alternancia_colunas",
-                        f"Ritmo alternado -> entrada em {format_par_cols(par)}"
-                    )
+        # 1. Quebra da coluna repetida fora do par
+        concordancias.append(f"Quebra {format_col_nome(col_repetida)} ({contagens_6[col_repetida]}/6)")
 
-    # 3. ATRASO / MENOR FREQUÊNCIA DE COLUNA NAS ÚLTIMAS 10
-    contagens_10 = {
-        "C1": ult_10.count("C1"),
-        "C2": ult_10.count("C2"),
-        "C3": ult_10.count("C3")
-    }
-    for c in ("C1", "C2", "C3"):
-        if contagens_10[c] <= 2:
-            for par in pares_validos:
-                if c in par:
-                    adicionar_ponto_par(
-                        par,
-                        1.0,
-                        "atraso_coluna",
-                        f"{format_col_nome(c)} com {contagens_10[c]}/10 saídas -> par {format_par_cols(par)}"
-                    )
+        # 2. Pelo menos uma coluna do par com seca >= 2
+        if any(secas[c] >= 2 for c in par):
+            concordancias.append("Seca>=2 no par")
 
-    # Exige concordância de pelo menos 2 estratégias diferentes no mesmo par
-    pares_com_concordancia = [
-        par
-        for par in pares_validos
-        if len(estrategias_por_par[par]) >= 2 and len(razoes_por_par[par]) >= 2
-    ]
-    if not pares_com_concordancia:
+        # 3. Pelo menos uma coluna do par com baixa frequência nas últimas 10 (<= 2/10)
+        if any(contagens_10[c] <= 2 for c in par):
+            concordancias.append("Freq<=2/10 no par")
+
+        # 4. Nenhuma coluna do par em cooldown ativo
+        if all(session["cooldown_by_col"].get(c, 0) == 0 for c in par):
+            concordancias.append("Sem cooldown")
+
+        # 5. Não repete o par do último erro registado
+        if not (ultimo_erro and ultimo_erro.get("cols") == par):
+            concordancias.append("Sem repetição do último loss")
+
+        if len(concordancias) >= MIN_CONCORDANCIA:
+            penalidade = session["strategy_penalty"].get("quebra_coluna", 0)
+            score = len(concordancias) - (0.35 * penalidade)
+            motivo = f"Concordância {len(concordancias)}/5 -> " + " | ".join(concordancias)
+
+            if melhor_candidato is None or score > melhor_candidato["score"]:
+                melhor_candidato = {
+                    "cols": par,
+                    "strategy": "quebra_coluna",
+                    "reason": motivo,
+                    "score": score
+                }
+
+    if melhor_candidato is None:
         return None
-
-    ultimo_erro = session["error_memory"][-1] if session["error_memory"] else None
-
-    melhor_par = max(pares_com_concordancia, key=lambda p: scores_par[p])
-    melhor_score = scores_par[melhor_par]
-
-    min_score_exigido = 2.0 if (ultimo_erro and ultimo_erro.get("cols") == melhor_par) else 1.5
-    if melhor_score < min_score_exigido or len(estrategias_por_par[melhor_par]) < 2:
-        return None
-
-    prioridade_estrategias = ["quebra_coluna", "atraso_coluna", "alternancia_colunas"]
-    estrategia_principal = next(
-        (e for e in prioridade_estrategias if e in estrategias_por_par[melhor_par]),
-        "quebra_coluna"
-    )
 
     return {
-        "cols": melhor_par,
-        "strategy": estrategia_principal,
-        "reason": " | ".join(razoes_por_par[melhor_par])
+        "cols": melhor_candidato["cols"],
+        "strategy": melhor_candidato["strategy"],
+        "reason": melhor_candidato["reason"]
     }
 
 
@@ -343,9 +324,11 @@ def strategy_validated(session):
 
 def brain_status(session):
     total = len(session["paper_results"])
+    espera = session.get("green_wait_rounds", 0)
+    estado_espera = f" | Espera pós-GREEN: {espera} rondas" if espera > 0 else " | A aguardar concordância válida"
     return (
-        "MODO REAL ATIVO (SEM FILTRO EXPERIMENTAL)",
-        f"Entradas diretas ativas | {total} ciclos concluídos"
+        "MODO REAL ATIVO (1 ESTRATÉGIA + CONCORDÂNCIA)",
+        f"quebra_coluna (mín. {MIN_CONCORDANCIA}/5) | {total} ciclos concluídos{estado_espera}"
     )
 
 
@@ -419,12 +402,13 @@ def evaluate_paper(session, outcome):
 # GESTÃO DAS OPERAÇÕES REAIS (2 COLUNAS, SEM PROTEÇÃO NO T, ATÉ G2)
 # =====================================================
 
-def close_cycle(session, pausa=COOLDOWN_CICLO):
+def close_cycle(session, foi_green=False):
     session["active_cols"] = None
     session["active_reason"] = ""
     session["active_strategy"] = ""
     session["gale"] = 0
-    session["cycle_cooldown"] = max(session.get("cycle_cooldown", 0), pausa)
+    if foi_green:
+        session["green_wait_rounds"] = ESPERA_POS_GREEN
 
 
 def process_live_bet(chat_id, session, outcome, raw_label):
@@ -441,20 +425,17 @@ def process_live_bet(chat_id, session, outcome, raw_label):
         if session["gale"] == 0:
             session["stats"]["wins"] += 1
             nivel = "ENTRADA PRINCIPAL"
-            pausa_pos_ciclo = COOLDOWN_CICLO
         elif session["gale"] == 1:
             session["stats"]["wins"] += 1
             session["stats"]["wins_g1"] += 1
             nivel = "GALE 1 (G1)"
-            pausa_pos_ciclo = COOLDOWN_CICLO
         else:
             session["stats"]["wins"] += 1
             session["stats"]["wins_g2"] += 1
             nivel = "GALE 2 (G2)"
-            pausa_pos_ciclo = COOLDOWN_GALE2
 
         registar_acerto_aprendizagem(session, cols, strat)
-        close_cycle(session, pausa=pausa_pos_ciclo)
+        close_cycle(session, foi_green=True)
 
         bot.send_message(
             chat_id,
@@ -462,7 +443,7 @@ def process_live_bet(chat_id, session, outcome, raw_label):
             f"🏆 Resolução: {nivel}\n"
             f"🎯 Resultado: {raw_label} ({outcome})\n"
             f"🧱 Colunas: {format_par_cols(cols)}\n\n"
-            "Ciclo encerrado com sucesso.",
+            f"Ciclo encerrado com sucesso. A aguardar {ESPERA_POS_GREEN} rondas antes de avaliar novas entradas.",
             parse_mode="Markdown"
         )
         return
@@ -503,7 +484,7 @@ def process_live_bet(chat_id, session, outcome, raw_label):
     strat = session["active_strategy"]
     diagnostico = registrar_autopsia_loss(session, cols, strat, outcome, session["history"])
     session["stats"]["losses"] += 1
-    close_cycle(session, pausa=COOLDOWN_GALE2)
+    close_cycle(session, foi_green=False)
     losses = session["stats"]["losses"]
 
     if losses >= LIMITE_LOSSES:
