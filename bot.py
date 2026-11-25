@@ -6,10 +6,8 @@ import requests
 from datetime import date, timedelta
 
 # ==============================================================================
-# 1. CONFIGURAÇÃO SIMPLES (LÊ DO RENDER SE EXISTIR, OU USA O VALOR DIRETO)
+# 1. CONFIGURAÇÃO (LÊ DO RENDER SE EXISTIR, OU USA O VALOR DIRETO)
 # ==============================================================================
-# Dica: depois de testar, gera chaves novas e mete em Environment no Render
-# para não ficarem expostas no código/GitHub.
 TELEGRAM_TOKEN = (
     os.getenv("TELEGRAM_BOT_TOKEN")
     or "8922303337:AAEkDbFYIa9hyz28nMdvq0iuO0oVYotVspE"
@@ -29,7 +27,7 @@ ULTIMO_PEDIDO_TS = 0.0
 
 
 # ==============================================================================
-# 2. LIGAÇÃO À API FOOTBALL-DATA.ORG COM CACHE
+# 2. FOOTBALL-DATA.ORG COM CACHE E PAUSA DE SEGURANÇA
 # ==============================================================================
 def fd_get(endpoint: str, params: dict | None = None):
     global ULTIMO_PEDIDO_TS
@@ -49,7 +47,7 @@ def fd_get(endpoint: str, params: dict | None = None):
         time.sleep(6.5 - delta)
 
     headers = {"X-Auth-Token": FOOTBALL_DATA_KEY}
-    resp = requests.get(url, headers=headers, params=params, timeout=20)
+    resp = requests.get(url, headers=headers, params=params, timeout=25)
     ULTIMO_PEDIDO_TS = time.time()
     resp.raise_for_status()
 
@@ -332,11 +330,11 @@ def avaliar_jogo(j: dict) -> dict | None:
 
 
 # ==============================================================================
-# 4. BOT TELEGRAM (/start e /análise)
+# 4. BOT TELEGRAM (/start e /análise) COM PROTEÇÃO CONTRA TIMEOUT
 # ==============================================================================
 def telegram_api(method: str, payload: dict):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
-    r = requests.post(url, json=payload, timeout=20)
+    r = requests.post(url, json=payload, timeout=45)
     r.raise_for_status()
     return r.json()
 
@@ -369,49 +367,53 @@ def rodar_bot():
     offset = None
     print("Robô ligado. À espera de /start ou /análise no Telegram...")
     while True:
-        params = {"timeout": 30}
-        if offset is not None:
-            params["offset"] = offset
+        try:
+            params = {"timeout": 25}
+            if offset is not None:
+                params["offset"] = offset
 
-        updates = telegram_api("getUpdates", params).get("result", [])
-        for upd in updates:
-            offset = upd["update_id"] + 1
-            msg = upd.get("message") or {}
-            chat_id = msg.get("chat", {}).get("id")
-            texto = (msg.get("text") or "").strip().lower()
+            updates = telegram_api("getUpdates", params).get("result", [])
+            for upd in updates:
+                offset = upd["update_id"] + 1
+                msg = upd.get("message") or {}
+                chat_id = msg.get("chat", {}).get("id")
+                texto = (msg.get("text") or "").strip().lower()
 
-            if not chat_id or not texto:
-                continue
+                if not chat_id or not texto:
+                    continue
 
-            if texto.startswith("/start"):
-                telegram_api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": (
-                        "👋 *Robô ativo!*\n\n"
-                        "Envia */análise* (ou */analise*) para ver:\n"
-                        "• Jogos com oportunidade\n"
-                        "• Aposta recomendada (1, X, 2 ou Mais de 2,5 golos)\n"
-                        "• Confiança\n"
-                        "• Onde apostar (mercado e seleção)"
-                    ),
-                    "parse_mode": "Markdown",
-                })
-            elif texto.startswith("/análise") or texto.startswith("/analise"):
-                telegram_api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": "⏳ A analisar jogos, época, forma, confrontos diretos e mercados...",
-                    "parse_mode": "Markdown",
-                })
-                try:
-                    resposta = formatar_resposta_analise()
-                except Exception as e:
-                    resposta = f"⚠️ Erro: `{e}`"
+                if texto.startswith("/start"):
+                    telegram_api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": (
+                            "👋 *Robô ativo!*\n\n"
+                            "Envia */análise* (ou */analise*) para ver:\n"
+                            "• Jogos com oportunidade\n"
+                            "• Aposta recomendada (1, X, 2 ou Mais de 2,5 golos)\n"
+                            "• Confiança\n"
+                            "• Onde apostar (mercado e seleção)"
+                        ),
+                        "parse_mode": "Markdown",
+                    })
+                elif texto.startswith("/análise") or texto.startswith("/analise"):
+                    telegram_api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": "⏳ A analisar jogos, época, forma, confrontos diretos e mercados...",
+                        "parse_mode": "Markdown",
+                    })
+                    try:
+                        resposta = formatar_resposta_analise()
+                    except Exception as e:
+                        resposta = f"⚠️ Erro: `{e}`"
 
-                telegram_api("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": resposta,
-                    "parse_mode": "Markdown",
-                })
+                    telegram_api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": resposta,
+                        "parse_mode": "Markdown",
+                    })
+        except Exception as e:
+            print(f"Aviso de ligação (a tentar de novo): {e}")
+            time.sleep(5)
 
 
 if __name__ == "__main__":
