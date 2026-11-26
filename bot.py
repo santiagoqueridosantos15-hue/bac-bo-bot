@@ -16,7 +16,7 @@ TELEGRAM_TOKEN = (
 FOOTBALL_DATA_KEY = (
     os.getenv("FOOTBALL_DATA_KEY")
     or os.getenv("SPORTS_API_KEY")
-    or "72a4ea44f89040fb822a5990dbb7c2ef"
+    or "16b544c3be4241d9b1518b8282809f39"
 ).strip()
 
 BASE_URL = "https://api.football-data.org/v4"
