@@ -19,7 +19,7 @@ TELEGRAM_TOKEN = (
 API_FOOTBALL_KEY = (
     os.getenv("API_FOOTBALL_KEY")
     or os.getenv("API_FOOBALL_KEY")
-    or "5c6d5b2b5f800a65a954c488c8728dc7"
+    
 ).strip()
 
 TZ_LISBOA = ZoneInfo("Europe/Lisbon")
