@@ -19,7 +19,7 @@ TELEGRAM_TOKEN = (
 API_FOOTBALL_KEY = (
     os.getenv("API_FOOTBALL_KEY")
     or os.getenv("API_FOOBALL_KEY")
-    
+    or "e8086f77-5ea5-446b-9b6e-d08aa68fa061"
 ).strip()
 
 TZ_LISBOA = ZoneInfo("Europe/Lisbon")
@@ -92,25 +92,47 @@ def buscar_jogos_reais_dia(data_str: str) -> list[dict]:
 
 
 # ==============================================================================
-# 3. HISTÓRICO REAL DAS EQUIPAS (FOOTBALL-DATA.CO.UK)
+# 3. HISTÓRICO REAL, ELO CONTÍNUO, DECAIMENTO TEMPORAL E MÉDIAS DE LIGA
 # ==============================================================================
-def carregar_estatisticas_fd() -> dict:
-    cache_key = ("fd_stats", EPOCA_FD)
+def _parse_data_ddmmyyyy(d_str: str) -> datetime | None:
+    d_str = (d_str or "").strip()
+    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(d_str, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def carregar_base_estatistica() -> dict:
+    cache_key = ("base_est", EPOCA_FD)
     agora = time.time()
     if cache_key in CACHE and (agora - CACHE[cache_key]["ts"]) < CACHE_TTL:
         return CACHE[cache_key]["data"]
 
     equipas = {}
+    elo = {}
+    ligas_hist = {}
 
-    def _registo(chave: str):
-        if chave not in equipas:
-            equipas[chave] = {
-                "h_j": 0, "h_gm": 0, "h_gs": 0,
-                "a_j": 0, "a_gm": 0, "a_gs": 0,
-                "tot_g": 0, "tot_j": 0,
-                "ultimos": [],  # (gm, gs, res)
+    def _reg_equipa(k: str):
+        if k not in equipas:
+            equipas[k] = {
+                "h_jogos": 0, "h_gm_pes": 0.0, "h_gs_pes": 0.0, "h_w_pes": 0.0,
+                "a_jogos": 0, "a_gm_pes": 0.0, "a_gs_pes": 0.0, "a_w_pes": 0.0,
+                "tot_jogos": 0,
+                "ultimos": [],  # (gm, gs, pts_0_a_1)
             }
-        return equipas[chave]
+        return equipas[k]
+
+    def _reg_liga(liga_nome: str):
+        if liga_nome not in ligas_hist:
+            ligas_hist[liga_nome] = {
+                "n": 0, "h_gm": 0.0, "h_gs": 0.0, "a_gm": 0.0, "a_gs": 0.0,
+                "p1": 0, "px": 0, "p2": 0, "over25": 0, "btts": 0,
+            }
+        return ligas_hist[liga_nome]
+
+    hoje_ref = datetime.now()
 
     for liga_code in LIGAS_FD:
         url = f"https://www.football-data.co.uk/mmz4281/{EPOCA_FD}/{liga_code}.csv"
@@ -131,146 +153,339 @@ def carregar_estatisticas_fd() -> dict:
                     continue
 
                 ftr = (linha.get("FTR") or "").strip()
-                eh = _registo(_normalizar(h_nome))
-                ea = _registo(_normalizar(a_nome))
+                dt_jogo = _parse_data_ddmmyyyy(linha.get("Date") or "")
+                dias_atras = max(0, (hoje_ref - dt_jogo).days) if dt_jogo else 30
+                # Decaimento temporal: jogos mais recentes pesam mais
+                peso = math.exp(-dias_atras / 75.0)
 
-                eh["h_j"] += 1
-                eh["h_gm"] += hg
-                eh["h_gs"] += ag
-                eh["tot_j"] += 1
-                eh["tot_g"] += hg + ag
-                eh["ultimos"].append((hg, ag, "V" if ftr == "H" else "E" if ftr == "D" else "D"))
+                kh = _normalizar(h_nome)
+                ka = _normalizar(a_nome)
+                eh = _reg_equipa(kh)
+                ea = _reg_equipa(ka)
 
-                ea["a_j"] += 1
-                ea["a_gm"] += ag
-                ea["a_gs"] += hg
-                ea["tot_j"] += 1
-                ea["tot_g"] += hg + ag
-                ea["ultimos"].append((ag, hg, "V" if ftr == "A" else "E" if ftr == "D" else "D"))
+                elo_h = elo.get(kh, 1500.0)
+                elo_a = elo.get(ka, 1500.0)
+                # Bónus de fator casa (+60 pontos Elo)
+                esp_h = 1.0 / (1.0 + 10.0 ** (((elo_a) - (elo_h + 60.0)) / 400.0))
+                res_h = 1.0 if ftr == "H" else (0.5 if ftr == "D" else 0.0)
+                k_elo = 24.0
+                elo[kh] = elo_h + k_elo * (res_h - esp_h)
+                elo[ka] = elo_a + k_elo * ((1.0 - res_h) - (1.0 - esp_h))
+
+                eh["h_jogos"] += 1
+                eh["h_gm_pes"] += hg * peso
+                eh["h_gs_pes"] += ag * peso
+                eh["h_w_pes"] += peso
+                eh["tot_jogos"] += 1
+                eh["ultimos"].append((hg, ag, res_h))
+
+                ea["a_jogos"] += 1
+                ea["a_gm_pes"] += ag * peso
+                ea["a_gs_pes"] += hg * peso
+                ea["a_w_pes"] += peso
+                ea["tot_jogos"] += 1
+                ea["ultimos"].append((ag, hg, 1.0 - res_h))
+
+                rl = _reg_liga(liga_code)
+                rl["n"] += 1
+                rl["h_gm"] += hg
+                rl["h_gs"] += ag
+                rl["a_gm"] += ag
+                rl["a_gs"] += hg
+                if ftr == "H":
+                    rl["p1"] += 1
+                elif ftr == "D":
+                    rl["px"] += 1
+                elif ftr == "A":
+                    rl["p2"] += 1
+                if (hg + ag) >= 3:
+                    rl["over25"] += 1
+                if hg >= 1 and ag >= 1:
+                    rl["btts"] += 1
         except Exception:
             continue
 
-    CACHE[cache_key] = {"ts": agora, "data": equipas}
-    return equipas
+    medias_liga = {}
+    for code, rl in ligas_hist.items():
+        n = max(1, rl["n"])
+        medias_liga[code] = {
+            "h_gm": rl["h_gm"] / n,
+            "h_gs": rl["h_gs"] / n,
+            "a_gm": rl["a_gm"] / n,
+            "a_gs": rl["a_gs"] / n,
+            "p1": rl["p1"] / n,
+            "px": rl["px"] / n,
+            "p2": rl["p2"] / n,
+            "over25": rl["over25"] / n,
+            "btts": rl["btts"] / n,
+        }
+
+    global_liga = {
+        "h_gm": sum(v["h_gm"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+        "h_gs": sum(v["h_gs"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+        "a_gm": sum(v["a_gm"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+        "a_gs": sum(v["a_gs"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+        "p1": sum(v["p1"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+        "px": sum(v["px"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+        "p2": sum(v["p2"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+        "over25": sum(v["over25"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+        "btts": sum(v["btts"] for v in medias_liga.values()) / max(1, len(medias_liga)),
+    }
+
+    dados = {
+        "equipas": equipas,
+        "elo": elo,
+        "medias_liga": medias_liga,
+        "global_liga": global_liga,
+    }
+    CACHE[cache_key] = {"ts": agora, "data": dados}
+    return dados
 
 
-def _encontrar_stats(nome_equipa: str, base_stats: dict) -> dict | None:
+def _encontrar_chave_e_stats(nome_equipa: str, equipas: dict) -> tuple[str | None, dict | None]:
     alvo = _normalizar(nome_equipa)
-    if alvo in base_stats:
-        return base_stats[alvo]
-    for chave, dados in base_stats.items():
+    if alvo in equipas:
+        return alvo, equipas[alvo]
+    for chave, dados in equipas.items():
         if alvo and (alvo in chave or chave in alvo):
-            return dados
-    return None
+            return chave, dados
+    return None, None
 
 
 def _poisson_pmf(k: int, lam: float) -> float:
     return math.exp(-lam) * (lam ** k) / math.factorial(k)
 
 
-def _forma_str(ultimos: list) -> str:
-    if not ultimos:
-        return "Sem registo"
-    return "".join(res for _, _, res in ultimos[-5:])
+def _dixon_coles_tau(gc: int, gf: int, lam_c: float, lam_f: float, rho: float = -0.08) -> float:
+    if gc == 0 and gf == 0:
+        return max(0.05, 1.0 - lam_c * lam_f * rho)
+    if gc == 0 and gf == 1:
+        return max(0.05, 1.0 + lam_c * rho)
+    if gc == 1 and gf == 0:
+        return max(0.05, 1.0 + lam_f * rho)
+    if gc == 1 and gf == 1:
+        return max(0.05, 1.0 - rho)
+    return 1.0
+
+
+def _momentum_ajuste(ultimos: list) -> float:
+    # Últimos 5 jogos ajustam ataque/defesa até ±10%
+    ult5 = ultimos[-5:]
+    if not ult5:
+        return 0.0
+    media_pts = sum(p for _, _, p in ult5) / len(ult5)
+    # 0.5 é neutro; 1.0 -> +10%; 0.0 -> -10%
+    bruto = (media_pts - 0.5) * 0.20
+    return max(-0.10, min(0.10, bruto))
 
 
 # ==============================================================================
-# 4. ANÁLISE NO ESTILO FOOTBALL AI PRO (1 / 2 / X / +2,5 GOLOS / AMBAS MARCAM)
+# 4. MOTOR COMPLETO (FORÇA + ELO + MOMENTUM + DIXON-COLES + EDGE + EV)
 # ==============================================================================
-def analisar_cartao(jogo: dict, base_stats: dict) -> dict:
-    st_c = _encontrar_stats(jogo["casa"], base_stats)
-    st_f = _encontrar_stats(jogo["fora"], base_stats)
+def analisar_jogo_completo(jogo: dict, base: dict, odd_mercado: float | None = None) -> dict:
+    equipas = base["equipas"]
+    elo_map = base["elo"]
+    m_liga = base["global_liga"]
 
-    if not st_c or not st_f or st_c["h_j"] < 2 or st_f["a_j"] < 2:
+    kc, st_c = _encontrar_chave_e_stats(jogo["casa"], equipas)
+    kf, st_f = _encontrar_chave_e_stats(jogo["fora"], equipas)
+
+    if not st_c or not st_f or st_c["tot_jogos"] < 2 or st_f["tot_jogos"] < 2:
         return {
+            "casa_norm": kc or _normalizar(jogo["casa"]),
+            "fora_norm": kf or _normalizar(jogo["fora"]),
             "liga": jogo["liga"],
             "hora": jogo["hora"],
             "titulo": f"{jogo['casa'].upper()} VS {jogo['fora'].upper()}",
             "recomendacao": "DEIXAR PASSAR",
-            "prob": "—",
+            "prob_num": 0.0,
+            "prob_str": "—",
             "confianca": "baixa",
-            "mercado": "Sem entrada",
-            "resumo": "Sem histórico estatístico suficiente em ambas as equipas para validar entrada com assertividade.",
+            "mercado": "Sem dados",
+            "resumo": "Histórico insuficiente nas bases carregadas para calcular margem fiável.",
         }
 
-    h_gm = st_c["h_gm"] / st_c["h_j"]
-    h_gs = st_c["h_gs"] / st_c["h_j"]
-    a_gm = st_f["a_gm"] / st_f["a_j"]
-    a_gs = st_f["a_gs"] / st_f["a_j"]
+    n_c = st_c["tot_jogos"]
+    n_f = st_f["tot_jogos"]
+    n_min = min(n_c, n_f)
 
-    ult_c = st_c["ultimos"][-6:]
-    ult_f = st_f["ultimos"][-6:]
+    # 1. Força Casa vs Fora ajustada às médias da liga
+    h_gm = (st_c["h_gm_pes"] / max(1e-6, st_c["h_w_pes"])) if st_c["h_jogos"] > 0 else m_liga["h_gm"]
+    h_gs = (st_c["h_gs_pes"] / max(1e-6, st_c["h_w_pes"])) if st_c["h_jogos"] > 0 else m_liga["h_gs"]
+    a_gm = (st_f["a_gm_pes"] / max(1e-6, st_f["a_w_pes"])) if st_f["a_jogos"] > 0 else m_liga["a_gm"]
+    a_gs = (st_f["a_gs_pes"] / max(1e-6, st_f["a_w_pes"])) if st_f["a_jogos"] > 0 else m_liga["a_gs"]
 
-    pts_c = sum(3 if r == "V" else 1 if r == "E" else 0 for _, _, r in ult_c) / max(1, len(ult_c) * 3)
-    pts_f = sum(3 if r == "V" else 1 if r == "E" else 0 for _, _, r in ult_f) / max(1, len(ult_f) * 3)
+    forca_atq_c = h_gm / max(0.4, m_liga["h_gm"])
+    forca_def_f = a_gs / max(0.4, m_liga["a_gs"])
+    forca_atq_f = a_gm / max(0.4, m_liga["a_gm"])
+    forca_def_c = h_gs / max(0.4, m_liga["h_gs"])
 
-    btts_c = sum(1 for gm, gs, _ in ult_c if gm >= 1 and gs >= 1) / max(1, len(ult_c))
-    btts_f = sum(1 for gm, gs, _ in ult_f if gm >= 1 and gs >= 1) / max(1, len(ult_f))
+    # Momentum dos últimos 5 jogos (±10%)
+    mom_c = _momentum_ajuste(st_c["ultimos"])
+    mom_f = _momentum_ajuste(st_f["ultimos"])
 
-    lam_c = max(0.25, ((h_gm + a_gs) / 2.0) * (0.85 + 0.30 * pts_c))
-    lam_f = max(0.25, ((a_gm + h_gs) / 2.0) * (0.85 + 0.30 * pts_f))
-    total_esp = lam_c + lam_f
+    lam_c = max(0.25, m_liga["h_gm"] * forca_atq_c * forca_def_f * (1.0 + mom_c))
+    lam_f = max(0.25, m_liga["a_gm"] * forca_atq_f * forca_def_c * (1.0 + mom_f))
 
-    media_ritmo = ((st_c["tot_g"] / max(1, st_c["tot_j"])) + (st_f["tot_g"] / max(1, st_f["tot_j"]))) / 2.0
-
-    p1 = px = p2 = p_over25 = p_btts = 0.0
-    for gc in range(8):
+    # 2. Simulação Poisson + correção Dixon-Coles
+    p_mat = {}
+    soma_p = 0.0
+    for gc in range(7):
         pc = _poisson_pmf(gc, lam_c)
-        for gf in range(8):
-            p = pc * _poisson_pmf(gf, lam_f)
-            if gc > gf:
-                p1 += p
-            elif gc == gf:
-                px += p
-            else:
-                p2 += p
-            if (gc + gf) >= 3:
-                p_over25 += p
-            if gc >= 1 and gf >= 1:
-                p_btts += p
+        for gf in range(7):
+            tau = _dixon_coles_tau(gc, gf, lam_c, lam_f)
+            val = pc * _poisson_pmf(gf, lam_f) * tau
+            p_mat[(gc, gf)] = val
+            soma_p += val
+    for k in p_mat:
+        p_mat[k] /= max(1e-9, soma_p)
 
-    p_btts = max(0.0, min(1.0, 0.75 * p_btts + 0.25 * ((btts_c + btts_f) / 2.0)))
+    p1_pois = p2_pois = px_pois = p_over25 = p_btts = 0.0
+    for (gc, gf), val in p_mat.items():
+        if gc > gf:
+            p1_pois += val
+        elif gc == gf:
+            px_pois += val
+        else:
+            p2_pois += val
+        if (gc + gf) >= 3:
+            p_over25 += val
+        if gc >= 1 and gf >= 1:
+            p_btts += val
 
-    # Apenas mercados permitidos: Ganhar (1 ou 2), Empate (X), Mais de 2,5 golos, Ambas marcam
-    escolhas = [
-        ("VITÓRIA DA CASA", "Resultado (1)", p1),
-        ("VITÓRIA FORA", "Resultado (2)", p2),
-        ("EMPATE", "Resultado (X)", px),
-        ("MAIS DE 2,5 GOLOS", "Golos (+2,5)", p_over25),
-        ("AMBAS MARCAM — SIM", "BTTS (Sim)", p_btts),
+    # 3. Elo contínuo (+60 casa) e combinação 70% Poisson + 30% Elo em 1X2
+    elo_c = elo_map.get(kc, 1500.0) + 60.0
+    elo_f = elo_map.get(kf, 1500.0)
+    diff_elo = (elo_c - elo_f) / 400.0
+    p1_elo = 1.0 / (1.0 + 10.0 ** (-diff_elo))
+    p2_elo = 1.0 - p1_elo
+    px_elo = max(0.14, 0.28 * math.exp(-(diff_elo ** 2) * 2.0))
+    tot_elo = p1_elo + px_elo + p2_elo
+    p1_elo, px_elo, p2_elo = p1_elo / tot_elo, px_elo / tot_elo, p2_elo / tot_elo
+
+    p1 = 0.70 * p1_pois + 0.30 * p1_elo
+    px = 0.70 * px_pois + 0.30 * px_elo
+    p2 = 0.70 * p2_pois + 0.30 * p2_elo
+
+    # 4. Penalização por incerteza (poucos jogos) e escolha por Edge sobre a liga
+    # Se n_min < 20, aplica penalidade proporcional para não inflacionar jogos curtos
+    penalidade_incerteza = max(0.0, (20 - n_min) * 0.0035)
+
+    candidatos = [
+        ("VITÓRIA DA CASA", "Resultado (1)", p1, m_liga["p1"]),
+        ("EMPATE", "Resultado (X)", px, m_liga["px"]),
+        ("VITÓRIA FORA", "Resultado (2)", p2, m_liga["p2"]),
+        ("MAIS DE 2,5 GOLOS", "Golos (+2,5)", p_over25, m_liga["over25"]),
+        ("AMBAS MARCAM — SIM", "BTTS (Sim)", p_btts, m_liga["btts"]),
     ]
-    rec, mercado, prob_val = max(escolhas, key=lambda x: x[2])
 
-    if prob_val < 0.45:
-        rec = "DEIXAR PASSAR"
-        mercado = "Sem vantagem"
+    melhor_item = None
+    melhor_score = -999.0
 
-    prob_pct = f"{prob_val * 100:.1f}%".replace(".", ",")
-    conf = "alta" if prob_val >= 0.58 else ("média" if prob_val >= 0.46 else "baixa")
+    for rec_nome, merc_nome, p_bruta, base_liga_p in candidatos:
+        p_aj = max(0.01, min(0.95, p_bruta - penalidade_incerteza))
+        odd_justa = 1.0 / max(0.05, p_aj)
+        # Exclui linhas triviais com odd justa < 1.25
+        if odd_justa < 1.25:
+            continue
+        edge = p_aj - base_liga_p
+        # Exige vantagem sobre a liga; se o edge for muito fraco, penaliza o score
+        score = edge + (0.15 * p_aj)
+        if score > melhor_score:
+            melhor_score = score
+            melhor_item = (rec_nome, merc_nome, p_aj, edge, odd_justa)
 
-    forma_c = _forma_str(st_c["ultimos"])
-    forma_f = _forma_str(st_f["ultimos"])
+    if not melhor_item:
+        return {
+            "casa_norm": kc,
+            "fora_norm": kf,
+            "liga": jogo["liga"],
+            "hora": jogo["hora"],
+            "titulo": f"{jogo['casa'].upper()} VS {jogo['fora'].upper()}",
+            "recomendacao": "DEIXAR PASSAR",
+            "prob_num": 0.0,
+            "prob_str": "—",
+            "confianca": "baixa",
+            "mercado": "Sem Edge",
+            "resumo": "Linhas sem vantagem estatística clara face à média da liga.",
+        }
+
+    rec_nome, merc_nome, p_final, edge, odd_justa = melhor_item
+    conf = "alta" if (n_min >= 20 and p_final >= 0.65) else ("média" if p_final >= 0.45 else "baixa")
+
+    # 5. Regra de EV e Alerta de Ratoeira (se odd for passada, ou estimativa de mercado)
+    if odd_mercado and odd_mercado > 1.0:
+        ev = (p_final * odd_mercado) - 1.0
+        if p_final > 0.65 and ev < 0:
+            rec_nome = "DEIXAR PASSAR (RATOEIRA)"
+            conf = "baixa"
+        elif ev < 0:
+            rec_nome = "DEIXAR PASSAR"
+            conf = "baixa"
+        extra_ev = f" EV: {ev*100:+.1f}% (odd {odd_mercado:.2f})."
+    else:
+        # Sem odd externa: se edge for negativo (< -0.02), não força entrada
+        if edge < -0.02 and p_final < 0.52:
+            rec_nome = "DEIXAR PASSAR"
+            conf = "baixa"
+        extra_ev = f" Edge liga: {edge*100:+.1f}% | Odd justa: {odd_justa:.2f}."
 
     resumo = (
-        f"Golos esperados {lam_c:.1f}–{lam_f:.1f} (total {total_esp:.1f}; média {media_ritmo:.1f}). "
-        f"{jogo['casa']} marca {h_gm:.1f} e sofre {h_gs:.1f} em casa (forma {forma_c}); "
-        f"{jogo['fora']} marca {a_gm:.1f} e sofre {a_gs:.1f} fora (forma {forma_f})."
+        f"xG {lam_c:.1f}–{lam_f:.1f} (total {lam_c + lam_f:.1f}). "
+        f"Elo {elo_c:.0f} vs {elo_f:.0f}. "
+        f"Jogos base: {n_c}/{n_f}.{extra_ev}"
     ).replace(".", ",")
 
     return {
+        "casa_norm": kc,
+        "fora_norm": kf,
         "liga": jogo["liga"],
         "hora": jogo["hora"],
         "titulo": f"{jogo['casa'].upper()} VS {jogo['fora'].upper()}",
-        "recomendacao": rec,
-        "prob": prob_pct,
+        "recomendacao": rec_nome,
+        "prob_num": p_final,
+        "prob_str": f"{p_final * 100:.1f}%".replace(".", ","),
         "confianca": conf,
-        "mercado": mercado,
+        "mercado": merc_nome,
         "resumo": resumo,
     }
 
 
 # ==============================================================================
-# 5. BOT TELEGRAM (/start e /análise)
+# 5. MÚLTIPLAS (CONFIANÇA ALTA, >= 20 JOGOS, PROB >= 65%, SEM REPETIR EQUIPAS)
+# ==============================================================================
+def montar_multiplas(cartoes: list[dict]) -> list[str]:
+    elegiveis = [
+        c for c in cartoes
+        if c["confianca"] == "alta"
+        and c["prob_num"] >= 0.65
+        and "DEIXAR PASSAR" not in c["recomendacao"]
+    ]
+    elegiveis.sort(key=lambda x: x["prob_num"], reverse=True)
+
+    boletim = []
+    equipas_usadas = set()
+    for c in elegiveis:
+        if c["casa_norm"] in equipas_usadas or c["fora_norm"] in equipas_usadas:
+            continue
+        boletim.append(c)
+        equipas_usadas.add(c["casa_norm"])
+        equipas_usadas.add(c["fora_norm"])
+        if len(boletim) == 3:
+            break
+
+    if len(boletim) < 2:
+        return ["• Sem jogos suficientes com confiança alta (≥20 jogos) e prob. ≥65% sem repetir equipas.\n"]
+
+    tipo = "TRIPLA" if len(boletim) == 3 else "DUPLA"
+    linhas = [f"🎯 *{tipo} SELECIONADA*\n"]
+    for idx, b in enumerate(boletim, start=1):
+        linhas.append(f"{idx}. *{b['titulo']}* → *{b['recomendacao']}* ({b['prob_str']})\n")
+    return linhas
+
+
+# ==============================================================================
+# 6. BOT TELEGRAM (/start e /análise)
 # ==============================================================================
 def telegram_api(method: str, payload: dict):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
@@ -285,7 +500,7 @@ def _formatar_cartao(c: dict) -> str:
         f"*{c['titulo']}*\n"
         f"RECOMENDAÇÃO DA IA\n"
         f"*{c['recomendacao']}*\n\n"
-        f"PROBABILIDADE: *{c['prob']}*  |  CONFIANÇA: *{c['confianca']}*  |  MERCADO: *{c['mercado']}*\n"
+        f"PROBABILIDADE: *{c['prob_str']}*  |  CONFIANÇA: *{c['confianca']}*  |  MERCADO: *{c['mercado']}*\n"
         f"_{c['resumo']}_\n"
     )
 
@@ -293,19 +508,25 @@ def _formatar_cartao(c: dict) -> str:
 def formatar_resposta() -> str:
     hoje_dt = datetime.now(TZ_LISBOA).date()
     amanha_dt = hoje_dt + timedelta(days=1)
-    base_stats = carregar_estatisticas_fd()
+    base = carregar_base_estatistica()
 
     partes = ["*FOOTBALL AI PRO — HOJE E AMANHÃ*\n"]
+    todos_cartoes = []
 
     for rotulo, dt in [("HOJE", hoje_dt), ("AMANHÃ", amanha_dt)]:
         partes.append(f"📅 *{rotulo} ({dt.isoformat()})*\n")
-        jogos = buscar_jogos_reais_dia(dt.isoformat())[:5]
+        jogos = buscar_jogos_reais_dia(dt.isoformat())[:6]
         if not jogos:
             partes.append("• Sem jogos reais agendados encontrados nesta data.\n")
         else:
             for j in jogos:
-                partes.append(_formatar_cartao(analisar_cartao(j, base_stats)))
+                c = analisar_jogo_completo(j, base)
+                todos_cartoes.append(c)
+                partes.append(_formatar_cartao(c))
                 partes.append("────────────────────\n")
+
+    partes.append("🎲 *MÚLTIPLAS (DUPLAS / TRIPLAS)*\n")
+    partes.extend(montar_multiplas(todos_cartoes))
 
     return "\n".join(partes)
 
@@ -315,7 +536,7 @@ def rodar_bot():
         raise ValueError("Falta configurar o TELEGRAM_TOKEN.")
 
     offset = None
-    print("Robô ativo no estilo Football AI Pro...")
+    print("Robô ativo com modelo completo (Elo + Dixon-Coles + Edge + Múltiplas)...")
     while True:
         try:
             params = {"timeout": 25}
@@ -338,14 +559,14 @@ def rodar_bot():
                         "text": (
                             "👋 *FOOTBALL AI PRO — TELEGRAM*\n\n"
                             "Envia */análise* (ou */analise*) para ver os jogos reais de *hoje e amanhã* "
-                            "com probabilidade, confiança e leitura estatística."
+                            "com o motor completo e secção de *múltiplas*."
                         ),
                         "parse_mode": "Markdown",
                     })
                 elif texto.startswith("/análise") or texto.startswith("/analise"):
                     telegram_api("sendMessage", {
                         "chat_id": chat_id,
-                        "text": "⏳ A carregar jogos reais de hoje e amanhã...",
+                        "text": "⏳ A calcular força, Elo, Dixon-Coles e Edge nos jogos de hoje e amanhã...",
                         "parse_mode": "Markdown",
                     })
                     try:
